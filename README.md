@@ -38,7 +38,7 @@ In order to be able to compile on the virtual platform, the following rules must
 
 ### Execution rules
 In order to be able to run and test the program on the virtual platform, the following rules must be taken into account:
-1. The program **MUST** reads the BrainFuck syntax through `stdin`
+1. The program **MUST** read the BrainFuck syntax through `stdin`
 2. The program **MUST** write standard logging to `stdout`
 3. The program **MUST** write error logging to `stderr`
 
