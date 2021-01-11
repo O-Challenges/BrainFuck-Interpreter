@@ -1,0 +1,186 @@
+﻿using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+
+namespace TestChallengeTwix
+{
+    public class Program
+    {
+        static void Main(string[] args)
+        {
+            var gameoflife = @"
+       +>>++++[<++++>-]<[<++++++>-]+[<[>>>>+<<<<-]>>>>[<<<<+>>>>>>+<<-]<+
+   +++[>++++++++<-]>.[-]<+++[>+++<-]>+[>>.+<<-]>>[-]<<<++[<+++++>-]<.<<[>>>>+
+ <<<<-]>>>>[<<<<+>>>>>>+<<-]<<[>>>>.+<<<++++++++++[<[>>+<<-]>>[<<+>>>>>++++++++
+ +++<<<-]<[>+<-]>[<+>>>>+<<<-]>>>[>>>>>>>>>>>>+>+<<     <<<<<<<<<<<-]>>>>>>>>>>
+>>[-[>>>>+<<<<-]>[>>>>+<<<<-]>>>]>      >>[<<<+>>  >-    ]<<<[>>+>+<<<-]>[->[<<<
+<+>>>>-]<[<<<  <+>      >>>-]<<<< ]<     ++++++  ++       +[>+++++<-]>>[<<+>>-]<
+<[>---<-]>.[- ]         <<<<<<<<< <      <<<<<< <         -]++++++++++.[-]<-]>>>
+>[-]<[-]+++++           +++[>++++        ++++<     -     ]>--.[-]<,----------[<+
+>-]>>>>>>+<<<<< <     <[>+>>>>>+>[      -]<<<      <<   <<-]>++++++++++>>>>>[[-]
+<<,<<<<<<<->>>> >    >>[<<<<+>>>>-]<<<<[>>>>+      >+<<<<<-]>>>>>----------[<<<<
+<<<<+<[>>>>+<<<      <-]>>>>[<<<<+>>>>>>+<<-      ]>[>-<-]>++++++++++[>+++++++++
+++<-]<<<<<<[>>>      >+<<<<-]>>>>[<<<<+>>>>>      >+<<-]>>>>[<<->>-]<<++++++++++
+[>+<-]>[>>>>>>>      >>>>>+>+<<<<      <<<<<      <<<<-]>>> >>     >>>>>>>[-[>>>
+>+<<<<-]>[>>>>       +<<<<-]>> >       ]>> >           [<< <        +>>>-]+<<<[>
+>>-<<<-]>[->[<      <<<+>>>>-]         <[ <            < <           <+>>>>-]<<<
+<]<<<<<<<<<<<, [    -]]>]>[-+++        ++               +    +++     ++[>+++++++
+++++>+++++++++ +    +<<-]>[-[>>>      +<<<-      ]>>>[ <    <<+      >>>>>>>+>+<
+<<<<-]>>>>[-[> >    >>+<<<<-]>[>      >>>+< <    <<-]> >    >]>      >>[<<<+>>>-
+]<<<[>>+>+<<< -     ]>[->[<<<<+>      >>>-] <    [<<< <    +>>       >>-]<<<<]<<
+<<<<<<[>>>+<< <     -]>>>[<<<+>>      >>>>> +    >+<< <             <<-]<<[>>+<<
+-]>>[<<+>>>>>      >+>+<<<<<-]>>      >>[-[ >    >>>+ <            <<<-]>[>>>>+<
+<<<-]>[>>>>+<      <<<-]>>]>>>[ -    ]<[>+< -    ]<[ -           [<<<<+>>>>-]<<<
+<]<<<<<<<<]<<      <<<<<<<<++++ +    +++++  [   >+++ +    ++++++[<[>>+<<-]>>[<<+
+>>>>>++++++++ +    ++<<<     -] <    [>+<- ]    >[<+ >    >>>+<<<-]>>>[<<<+>>>-]
+<<<[>>>+>>>>  >    +<<<<     <<      <<-]> >    >>>>       >>>[>>+<<-]>>[<<+<+>>
+>-]<<<------ -    -----[     >>      >+<<< -    ]>>>       [<<<+> > >>>>>+>+<<<<
+<-]>>>>[-[>> >    >+<<<<    -] >     [>>>> +    <<<<-       ]>>> ]  >>>[<<<+>>>-
+]<<<[>>+>+<< <    -]>>>     >>           > >    [<<<+               >>>-]<<<[>>>
++<<<<<+>>-                  ]>           >     >>>>>[<             <<+>>>-]<<<[>
+>>+<<<<<<<                  <<+         >      >>>>>-]<          <<<<<<[->[<<<<+
+>>>>-]<[<<<<+>>>>-]<<<<]>[<<<<<<    <+>>>      >>>>-]<<<<     <<<<<+++++++++++[>
+>>+<<<-]>>>[<<<+>>>>>>>+>+<<<<<-]>>>>[-[>     >>>+<<<<-]>[>>>>+<<<<-]>>>]>>>[<<<
++>>>-]<<<[>>+>+<<<-]>>>>>>>[<<<+>>>-]<<<[     >>>+<<<<<+>>-]>>>>>>>[<<<+>>>-]<<<
+[>>>+<<<<<<<<<+>>>>>>-]<<<<<<<[->[< <  <     <+>>>>-]<[<<<<+>>>>-]<<<<]>[<<<<<<<
++>>>>>>>-]<<<<<<<<<+++++++++++[>>> >        >>>+>+<<<<<<<<-]>>>>>>>[-[>>>>+<<<<-
+]>[>>>>+<<<<-]>>>]>>>[<<<+>>>-]<<< [       >>+>+<<<-]>>>>>>>[<<<+>>>-]<<<[>>>+<<
+<<<+>>-]>>>>>>>[<<<+>>>-]<<<[>>>+<        <<<<<<<<+>>>>>>-]<<<<<<<[->[<<<<+>>>>-
+ ]<[<<<<+>>>>-]<<<<]>[<<<<<<<+>>>>>      >>-]<<<<<<<----[>>>>>>>+<<<<<<<+[>>>>>
+ >>-<<<<<<<[-]]<<<<<<<[>>>>>>>>>>>>+>+<<<<<<<<<<<<<-][   lft@df.lth.se   ]>>>>>
+   >>>>>>>[-[>>>>+<<<<-]>[>>>>+<<<<-]>[>>>>+<<<<-]>>]>>>[-]<[>+<-]<[-[<<<<+>>
+       >>-]<<<<]<<<<<<[-]]<<<<<<<[-]<<<<-]<-]>>>>>>>>>>>[-]<<]<<<<<<<<<<]
+
+";
+
+            var hellowworld1 = @"++++++++[>++++[>++>+++>+++>+<<<<-]>+>+>->>+[<]<-]>>.>---.+++++++..+++.>>.<-.<.+++.------.--------.>>+.>++.";
+
+            var hellowworld2 = @">++++++++[-<+++++++++>]<.>>+>-[+]++>++>+++[>[->+++<<+++>]<<]>-----.>->
++++..+++.>-.<<+[>[+>+]>>]<--------------.>>.+++.------.--------.>+.>+.";
+
+            var mandelbrot = File.ReadAllText("mandelbrot.b");
+
+            ExecuteBrainfuck(Console.OpenStandardInput(), Console.OpenStandardOutput(), new MemoryStream(Encoding.ASCII.GetBytes(mandelbrot)));
+        }
+
+        public unsafe static void ExecuteBrainfuck(Stream stdinput, Stream stdoutput, Stream brainf)
+        {
+            const int NUM_CELLS = 16384;
+            const int INPUT_BUFFER_SIZE = 32768;
+
+            const byte POINTER_RIGHT = 0x3E;
+            const byte POINTER_LEFT = 0x3C;
+            const byte INCREMENT = 0x2B;
+            const byte DECREMENT = 0x2D;
+            const byte WRITE_OUT = 0x2E;
+            const byte READ_IN = 0x2C;
+            const byte LOOP_START = 0x5B;
+            const byte LOOP_END = 0x5D;
+
+            // track loop positions
+            // TODO... pay attention to this
+            // TODO... this code can be further optimized. like, a lot - I think.
+            // TODO...
+            int parsedTo = 0;
+            Stack<int> unmatched = new Stack<int>();
+            Dictionary<int, int> forward = new Dictionary<int, int>();
+            Dictionary<int, int> backward = new Dictionary<int, int>();
+            void addMatch(int start, int end)
+            {
+                forward.Add(start, end);
+                backward.Add(end, start);
+                parsedTo = end;
+            }
+
+            // read input buffer to memory
+            byte[] buffer = new byte[INPUT_BUFFER_SIZE];
+            int bufferLength = 0;
+            while (true)
+            {
+                int read = brainf.Read(buffer, bufferLength, buffer.Length - bufferLength);
+                bufferLength += read;
+                if (read <= 0) break;
+            }
+
+            byte* cell = stackalloc byte[NUM_CELLS];
+            cell += (NUM_CELLS / 2); // set current cell to somewhere in middle to support negative cell positions
+
+            for (int cursor = 0; cursor < bufferLength; cursor++)
+            {
+                var inst = buffer[cursor];
+                switch (inst)
+                {
+                    case POINTER_RIGHT: // >   move pointer right
+                        ++cell;
+                        continue;
+                    case POINTER_LEFT: // <   move pointer left
+                        --cell;
+                        continue;
+                    case INCREMENT: // +   increment current cell
+                        ++*cell;
+                        continue;
+                    case DECREMENT: // -   decrement current cell
+                        --*cell;
+                        continue;
+                    case WRITE_OUT: // .   write cell to output
+                        stdoutput.WriteByte(*cell);
+                        continue;
+                    case READ_IN: // ,   read input to cell
+                        *cell = (byte)stdinput.ReadByte();
+                        continue;
+                    case LOOP_START: // [   Jump past the matching ] if the cell at the pointer is 0
+                        if (forward.TryGetValue(cursor, out var jmpst))
+                        {
+                            if (*cell == 0)
+                                cursor = jmpst;
+                        }
+                        else
+                        {
+                            if (*cell == 0) // we need to lookahead for the corresponding closing bracket to jmp to
+                            {
+                                for (int y = cursor; ; y++)
+                                {
+                                    if (buffer[y] == LOOP_START)
+                                    {
+                                        unmatched.Push(y);
+                                    }
+                                    else if (buffer[y] == LOOP_END)
+                                    {
+                                        var x = unmatched.Pop();
+                                        addMatch(x, y);
+                                        if (x == cursor)
+                                        {
+                                            cursor = y;
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                            else // we are not jmping here and can initialize this pair lazily 
+                            {
+                                unmatched.Push(cursor);
+                            }
+                        }
+                        continue;
+                    case LOOP_END: // ]   Jump back to the matching [ if the cell at the pointer is nonzero
+                        if (parsedTo >= cursor)
+                        {
+                            if (*cell != 0) cursor = backward[cursor];
+                        }
+                        else
+                        {
+                            var x = unmatched.Pop();
+                            addMatch(x, cursor);
+                            if (*cell != 0) cursor = x;
+                        }
+                        continue;
+                }
+            }
+
+            stdoutput.Flush();
+        }
+    }
+}
