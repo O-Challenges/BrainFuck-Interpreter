@@ -1,0 +1,1 @@
+Manifest-Version: 1.0Created-By: GameLawlMain-Class: com.remco.brainfuck.Main
