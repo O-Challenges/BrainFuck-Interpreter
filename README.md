@@ -20,5 +20,6 @@ The following languages are going to be included with their respective author:
 | C#         	| @Nekiwo          	|
 | Golang     	| @Oli-Ar          	|
 | Java       	| @GameLawl        	|
+| JavaScript    | @Rodziac          |
 | Typescript 	| @Zaedus          	|
 | Verilog    	| @UDXS            	|
