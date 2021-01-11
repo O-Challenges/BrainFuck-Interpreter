@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Windows.Forms;
 
 [assembly: AssemblyTitle("BrainFJit")]
@@ -132,16 +133,16 @@ namespace BrainFJit
                         var len = j - i;
                         switch (bf[i])
                         {
-                            case '<': code.Add((int) Instr.PtrLeft | (len << 4)); break;
-                            case '>': code.Add((int) Instr.PtrRight | (len << 4)); break;
-                            case '+': code.Add((int) Instr.Add | (len << 4)); break;
-                            case '-': code.Add((int) Instr.Sub | (len << 4)); break;
+                            case '<': code.Add((int) Instr.PtrLeft); code.Add((int) len); break;
+                            case '>': code.Add((int) Instr.PtrRight); code.Add((int) len); break;
+                            case '+': code.Add((int) Instr.Add); code.Add((int) len); break;
+                            case '-': code.Add((int) Instr.Sub); code.Add((int) len); break;
                         }
                         i = j - 1;
                         break;
 
                     case '[':
-                        offset += code.Count + (blocks.Count == 0 ? 0 : 1);
+                        offset += code.Count + (blocks.Count == 0 ? 0 : 2);
                         blocks.Push(code);
                         code = new List<int>();
                         break;
@@ -153,15 +154,34 @@ namespace BrainFJit
                         var intOffset = 0;
                         var instrs = new List<int>();
                         var invalid = false;
-                        for (var k = 0; k < code.Count; k++)
+                        var k = 0;
+                        for (; k < code.Count; k++)
                         {
                             var it = code[k];
-                            switch ((Instr) (it & 0xf))
+                            switch ((Instr) it)
                             {
-                                case Instr.PtrLeft: ptrOffset -= it >> 4; break;
-                                case Instr.PtrRight: ptrOffset += it >> 4; break;
-                                case Instr.Add: if (ptrOffset == 0) intOffset += it >> 4; else instrs.Add((int) (ptrOffset < 0 ? Instr.AddMultL : Instr.AddMultR) | ((it >> 4) << 4) | (Math.Abs(ptrOffset) << 18)); break;
-                                case Instr.Sub: if (ptrOffset == 0) intOffset -= it >> 4; else instrs.Add((int) (ptrOffset < 0 ? Instr.SubMultL : Instr.SubMultR) | ((it >> 4) << 4) | (Math.Abs(ptrOffset) << 18)); break;
+                                case Instr.PtrLeft: ptrOffset -= code[++k]; break;
+                                case Instr.PtrRight: ptrOffset += code[++k]; break;
+                                case Instr.Add:
+                                    if (ptrOffset == 0)
+                                        intOffset += code[++k];
+                                    else
+                                    {
+                                        instrs.Add((int) (ptrOffset < 0 ? Instr.AddMultL : Instr.AddMultR));
+                                        instrs.Add((int) Math.Abs(ptrOffset));
+                                        instrs.Add(code[++k]);
+                                    }
+                                    break;
+                                case Instr.Sub:
+                                    if (ptrOffset == 0)
+                                        intOffset -= code[++k];
+                                    else
+                                    {
+                                        instrs.Add((int) (ptrOffset < 0 ? Instr.SubMultL : Instr.SubMultR));
+                                        instrs.Add((int) Math.Abs(ptrOffset));
+                                        instrs.Add(code[++k]);
+                                    }
+                                    break;
 
                                 case Instr.AddMultL:
                                 case Instr.AddMultR:
@@ -191,12 +211,18 @@ namespace BrainFJit
 
                         // Pop
                         var outerCode = blocks.Pop();
-                        var c = outerCode.Count + (blocks.Count == 0 ? 0 : 1);
+                        var c = outerCode.Count + (blocks.Count == 0 ? 0 : 2);
                         if (brackets)
-                            outerCode.Add((int) Instr.Jz | ((offset + code.Count + 1) << 4));
+                        {
+                            outerCode.Add((int) Instr.Jz);
+                            outerCode.Add((int) (offset + code.Count + 3));
+                        }
                         outerCode.AddRange(code);
                         if (brackets)
-                            outerCode.Add((int) Instr.Jnz | (offset << 4));
+                        {
+                            outerCode.Add((int) Instr.Jnz);
+                            outerCode.Add((int) (offset + 1));
+                        }
                         code = outerCode;
                         offset -= c;
                         break;
@@ -206,9 +232,35 @@ namespace BrainFJit
             if (blocks.Count != 0)
                 throw new InvalidOperationException("Square brackets are not balanced.");
 
-            //Clipboard.SetText(stringifyCode(code));
+            Clipboard.SetText(stringifyCode(code));
 
-            byte* ptr = stackalloc byte[1024 * 16];
+            // ## DEBUG
+            i = 0;
+            for (; i < code.Count; i++)
+            {
+                if ((Instr) code[i] == Instr.Jz && (Instr) code[code[i + 1] - 1] != Instr.Jnz)
+                    Console.WriteLine($"[{i} is wrong");
+                if ((Instr) code[i] == Instr.Jnz && (Instr) code[code[i + 1] - 1] != Instr.Jz)
+                    Console.WriteLine($"]{i} is wrong");
+
+                switch ((Instr) code[i])
+                {
+                    case Instr.PtrLeft: i += 1; break;
+                    case Instr.PtrRight: i += 1; break;
+                    case Instr.Add: i += 1; break;
+                    case Instr.Sub: i += 1; break;
+                    case Instr.AddMultL: i += 2; break;
+                    case Instr.AddMultR: i += 2; break;
+                    case Instr.SubMultL: i += 2; break;
+                    case Instr.SubMultR: i += 2; break;
+                    case Instr.Jz: i += 1; break;
+                    case Instr.Jnz: i += 1; break;
+                }
+            }
+            // ## END DEBUG
+
+            int* ptr = stackalloc int[1024 * 16];
+            ptr += 1024 * 8;
 
             i = 0;
             unchecked
@@ -216,21 +268,21 @@ namespace BrainFJit
                 for (; i < code.Count; i++)
                 {
                     var instr = code[i];
-                    switch ((Instr) (instr & 0xf))
+                    switch ((Instr) instr)
                     {
-                        case Instr.PtrLeft: ptr -= instr >> 4; break;
-                        case Instr.PtrRight: ptr += instr >> 4; break;
-                        case Instr.Add: *ptr = (byte) (*ptr + (instr >> 4)); break;
-                        case Instr.Sub: *ptr = (byte) (*ptr - (instr >> 4)); break;
-                        case Instr.AddMultL: *(ptr - (instr >> 18)) += (byte) (((instr >> 4) & 0x3fff) * *ptr); break;
-                        case Instr.AddMultR: *(ptr + (instr >> 18)) += (byte) (((instr >> 4) & 0x3fff) * *ptr); break;
-                        case Instr.SubMultL: *(ptr - (instr >> 18)) -= (byte) (((instr >> 4) & 0x3fff) * *ptr); break;
-                        case Instr.SubMultR: *(ptr + (instr >> 18)) -= (byte) (((instr >> 4) & 0x3fff) * *ptr); break;
+                        case Instr.PtrLeft: ptr -= code[++i]; break;
+                        case Instr.PtrRight: ptr += code[++i]; break;
+                        case Instr.Add: *ptr = (int) (*ptr + code[++i]); break;
+                        case Instr.Sub: *ptr = (int) (*ptr - code[++i]); break;
+                        case Instr.AddMultL: *(ptr - code[++i]) += (int) (code[++i] * *ptr); break;
+                        case Instr.AddMultR: *(ptr + code[++i]) += (int) (code[++i] * *ptr); break;
+                        case Instr.SubMultL: *(ptr - code[++i]) -= (int) (code[++i] * *ptr); break;
+                        case Instr.SubMultR: *(ptr + code[++i]) -= (int) (code[++i] * *ptr); break;
                         case Instr.SetZero: *ptr = 0; break;
                         case Instr.Input:
                             int ch;
                             while ((ch = input.Read()) == 13) ;     // intentionally ignore '\r'
-                            *ptr = (byte) ch;
+                            *ptr = (int) ch;
                             break;
 
                         case Instr.Output:
@@ -248,30 +300,41 @@ namespace BrainFJit
                             Console.Write((char) *ptr);
                             /**/
                             break;
-                        case Instr.Jz: if (*ptr == 0) i = instr >> 4; break;
-                        case Instr.Jnz: if (*ptr != 0) i = instr >> 4; break;
+                        case Instr.Jz: i++; if (*ptr == 0) i = code[i]; break;
+                        case Instr.Jnz: i++; if (*ptr != 0) i = code[i]; break;
+
+                        default: System.Diagnostics.Debugger.Break(); throw new InvalidOperationException();
                     }
                 }
             }
         }
 
-        private static string stringifyCode(List<int> code) => string.Join(" ", code.Select((i, ix) => ((Instr) (i & 0xf)) switch
+        private static string stringifyCode(List<int> code)
         {
-            Instr.Noop => $"/",
-            Instr.PtrLeft => $"<{i >> 4}",
-            Instr.PtrRight => $">{i >> 4}",
-            Instr.Add => $"+{i >> 4}",
-            Instr.Sub => $"-{i >> 4}",
-            Instr.AddMultL => $"+{(i >> 4) & 0x3fff}×<{i >> 18}",
-            Instr.AddMultR => $"+{(i >> 4) & 0x3fff}×>{i >> 18}",
-            Instr.SubMultL => $"-{(i >> 4) & 0x3fff}×<{i >> 18}",
-            Instr.SubMultR => $"-{(i >> 4) & 0x3fff}×>{i >> 18}",
-            Instr.SetZero => "0",
-            Instr.Input => ",",
-            Instr.Output => ".",
-            Instr.Jz => $"{ix}[{i >> 4}",
-            Instr.Jnz => $"{ix}]{i >> 4}",
-            _ => "?",
-        }));
+            var sb = new List<string>();
+            var i = 0;
+            for (; i < code.Count; i++)
+            {
+                switch ((Instr) code[i])
+                {
+                    case Instr.Noop: sb.Add($"/"); break;
+                    case Instr.PtrLeft: sb.Add($"<{code[++i]}"); break;
+                    case Instr.PtrRight: sb.Add($">{code[++i]}"); break;
+                    case Instr.Add: sb.Add($"+{code[++i]}"); break;
+                    case Instr.Sub: sb.Add($"-{code[++i]}"); break;
+                    case Instr.AddMultL: sb.Add($"<{code[++i]}+{code[++i]}×"); break;
+                    case Instr.AddMultR: sb.Add($">{code[++i]}+{code[++i]}×"); break;
+                    case Instr.SubMultL: sb.Add($"<{code[++i]}-{code[++i]}×"); break;
+                    case Instr.SubMultR: sb.Add($">{code[++i]}-{code[++i]}×"); break;
+                    case Instr.SetZero: sb.Add("0"); break;
+                    case Instr.Input: sb.Add(","); break;
+                    case Instr.Output: sb.Add("."); break;
+                    case Instr.Jz: sb.Add($"{i}[{code[++i]}"); break;
+                    case Instr.Jnz: sb.Add($"{i}]{code[++i]}"); break;
+                    default: sb.Add("?"); break;
+                }
+            }
+            return string.Join(" ", sb);
+        }
     }
 }
