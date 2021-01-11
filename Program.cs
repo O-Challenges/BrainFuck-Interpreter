@@ -70,6 +70,7 @@ namespace TestChallengeTwix
         {
             const int NUM_CELLS = 16384;
             const int INPUT_BUFFER_SIZE = 32768;
+            const int OUTPUT_BUFFER_SIZE = 256;
 
             const byte POINTER_RIGHT = 0x3E;
             const byte POINTER_LEFT = 0x3C;
@@ -80,7 +81,16 @@ namespace TestChallengeTwix
             const byte LOOP_START = 0x5B;
             const byte LOOP_END = 0x5D;
 
-            // read input buffer to memory
+            // outputs
+            byte[] output = new byte[OUTPUT_BUFFER_SIZE];
+            int outputLength = 0;
+            void flushOutput()
+            {
+                stdoutput.Write(output, 0, outputLength);
+                outputLength = 0;
+            }
+
+            // inputs
             byte[] buffer = new byte[INPUT_BUFFER_SIZE];
             int bufferLength = 0;
             while (true)
@@ -90,6 +100,7 @@ namespace TestChallengeTwix
                 if (read <= 0) break;
             }
 
+            // loop cache
             int[] lookup = new int[bufferLength];
             Stack<int> unmatched = new Stack<int>();
             void addMatch(int start, int end)
@@ -119,7 +130,10 @@ namespace TestChallengeTwix
                         --*cell;
                         continue;
                     case WRITE_OUT: // .   write cell to output
-                        stdoutput.WriteByte(*cell);
+                        output[outputLength] = *cell;
+                        outputLength++;
+                        if (outputLength >= OUTPUT_BUFFER_SIZE)
+                            flushOutput();
                         continue;
                     case READ_IN: // ,   read input to cell
                         *cell = (byte)stdinput.ReadByte();
@@ -174,7 +188,7 @@ namespace TestChallengeTwix
                 }
             }
 
-            stdoutput.Flush();
+            flushOutput();
         }
     }
 }
