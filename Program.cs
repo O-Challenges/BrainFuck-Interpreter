@@ -4,7 +4,6 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
-using System.Windows.Forms;
 
 [assembly: AssemblyTitle("BrainFJit")]
 [assembly: AssemblyDescription("")]
@@ -84,7 +83,7 @@ namespace BrainFJit
             //new StreamReader(File.OpenRead(@"D:\c\BrainFuck-Interpreter-Challenge\gameoflife-input.txt"))
             );
             Console.WriteLine();
-            Console.WriteLine($"Took {(DateTime.UtcNow - start).TotalSeconds:0} sec.");
+            Console.WriteLine($"Took {(DateTime.UtcNow - start).TotalSeconds:0.00} sec.");
             Console.ReadLine();
         }
 
@@ -109,6 +108,9 @@ namespace BrainFJit
         public unsafe static void InterpretBrainfuck(string bf, TextReader input)
         {
             var output = new MemoryStream();
+
+
+            // ## JITTER STARTS HERE
 
             var blocks = new Stack<List<int>>();
             var code = new List<int>();
@@ -208,14 +210,21 @@ namespace BrainFJit
 
             //Clipboard.SetText(stringifyCode(code));
 
+
+            // ## INTERPRETER STARTS HERE
+
+            var numInstr = code.Count;
+            int* codePtr = stackalloc int[numInstr];
+            for (i = 0; i < numInstr; i++)
+                *(codePtr + i) = code[i];
             byte* ptr = stackalloc byte[1024 * 16];
 
             i = 0;
             unchecked
             {
-                for (; i < code.Count; i++)
+                for (; i < numInstr; i++)
                 {
-                    var instr = code[i];
+                    var instr = *(codePtr + i);
                     switch ((Instr) (instr & 0xf))
                     {
                         case Instr.PtrLeft: ptr -= instr >> 4; break;
