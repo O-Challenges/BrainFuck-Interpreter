@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -80,21 +80,6 @@ namespace TestChallengeTwix
             const byte LOOP_START = 0x5B;
             const byte LOOP_END = 0x5D;
 
-            // track loop positions
-            // TODO... pay attention to this
-            // TODO... this code can be further optimized. like, a lot - I think.
-            // TODO...
-            int parsedTo = 0;
-            Stack<int> unmatched = new Stack<int>();
-            Dictionary<int, int> forward = new Dictionary<int, int>();
-            Dictionary<int, int> backward = new Dictionary<int, int>();
-            void addMatch(int start, int end)
-            {
-                forward.Add(start, end);
-                backward.Add(end, start);
-                parsedTo = end;
-            }
-
             // read input buffer to memory
             byte[] buffer = new byte[INPUT_BUFFER_SIZE];
             int bufferLength = 0;
@@ -103,6 +88,14 @@ namespace TestChallengeTwix
                 int read = brainf.Read(buffer, bufferLength, buffer.Length - bufferLength);
                 bufferLength += read;
                 if (read <= 0) break;
+            }
+
+            int[] lookup = new int[bufferLength];
+            Stack<int> unmatched = new Stack<int>();
+            void addMatch(int start, int end)
+            {
+                lookup[start] = end;
+                lookup[end] = start;
             }
 
             byte* cell = stackalloc byte[NUM_CELLS];
@@ -132,10 +125,10 @@ namespace TestChallengeTwix
                         *cell = (byte)stdinput.ReadByte();
                         continue;
                     case LOOP_START: // [   Jump past the matching ] if the cell at the pointer is 0
-                        if (forward.TryGetValue(cursor, out var jmpst))
+                        var pairf = lookup[cursor];
+                        if (pairf != 0)
                         {
-                            if (*cell == 0)
-                                cursor = jmpst;
+                            if (*cell == 0) cursor = pairf;
                         }
                         else
                         {
@@ -166,9 +159,10 @@ namespace TestChallengeTwix
                         }
                         continue;
                     case LOOP_END: // ]   Jump back to the matching [ if the cell at the pointer is nonzero
-                        if (parsedTo >= cursor)
+                        var pairb = lookup[cursor];
+                        if (pairb != 0)
                         {
-                            if (*cell != 0) cursor = backward[cursor];
+                            if (*cell != 0) cursor = pairb;
                         }
                         else
                         {
