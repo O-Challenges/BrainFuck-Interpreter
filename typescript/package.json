@@ -1,0 +1,19 @@
+{
+  "name": "brainfuck-interpreter",
+  "version": "1.0.0",
+  "description": "Fuck you",
+  "main": "build/main.js",
+  "directories": {
+    "example": "examples"
+  },
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/GameLawl/BrainFuck-Interpreter/tree/typescript-zaedus"
+  },
+  "author": "Zaedus",
+  "license": "ISC"
+}
