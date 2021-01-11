@@ -35,6 +35,7 @@ The following sections state all the rules specifically for this project and thi
 
 ### Compilation rules
 In order to be able to compile on the virtual platform, the following rules must be taken into account:
+1. The program **WILL** only be reading ASCII characters. This means that there is no need for UTF-8 support or any Unicode support of any kind. This is **NOT** a requirement but more an easy way around certain issues.
 
 ### Execution rules
 In order to be able to run and test the program on the virtual platform, the following rules must be taken into account:
