@@ -1,1 +1,1 @@
-Manifest-Version: 1.0Created-By: GameLawlMain-Class: com.remco.brainfuck.Main
+Manifest-Version: 1.0Created-By: GameLawlImplementation-Title: BrainFuck Interpreter JavaImplementation-Version: 1.0Main-Class: com.remco.brainfuck.Main
