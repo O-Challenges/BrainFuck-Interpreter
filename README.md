@@ -15,15 +15,17 @@ The following languages are going to be included with their respective author:
 | Assembly   	| @FearlessDoggo21 	|
 | C++        	| @SomeGithub01    	|
 | C++        	| @EntireTwix      	|
-| C++         | @Riku32           |
-| C++         | @benkyd           |
+| C++          | @Riku32            |
+| C++          | @benkyd            |
 | C#         	| @caesay          	|
 | C#         	| @Nekiwo          	|
+| C#           | @rstarkov          |
 | Golang     	| @Oli-Ar          	|
-| Java          | @clubPenguin420   |
+| Java         | @clubPenguin420    |
 | Java       	| @GameLawl        	|
-| JavaScript  | @Rodziac          |
-| Rust        | @HamishWHC        |
+| JavaScript   | @Rodziac           |
+| Python       | @Fark1             |
+| Rust         | @HamishWHC         |
 | Typescript 	| @Zaedus          	|
 | Verilog    	| @UDXS            	|
 
