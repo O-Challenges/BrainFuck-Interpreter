@@ -1,6 +1,10 @@
 {
     "compileOnSave": true,
     "compilerOptions": {
-        "outDir": "build"
-    }
+        "module": "ESNext",
+        "outDir": "build",
+        "rootDir": "src"
+    },
+    "include": ["src"],
+    "exclude": ["node_modules"],
 }
