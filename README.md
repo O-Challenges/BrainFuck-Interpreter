@@ -15,6 +15,7 @@ The following languages are going to be included with their respective author:
 | Assembly   	| @FearlessDoggo21 	|
 | C++        	| @SomeGithub01    	|
 | C++        	| @EntireTwix      	|
+| C++           | @Riku32           |
 | C#         	| @caesay          	|
 | C#         	| @Nekiwo          	|
 | Golang     	| @Oli-Ar          	|
