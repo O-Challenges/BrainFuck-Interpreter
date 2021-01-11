@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -114,8 +114,7 @@ namespace TestChallengeTwix
 
             for (int cursor = 0; cursor < bufferLength; cursor++)
             {
-                var inst = buffer[cursor];
-                switch (inst)
+                switch (buffer[cursor])
                 {
                     case POINTER_RIGHT: // >   move pointer right
                         ++cell;
