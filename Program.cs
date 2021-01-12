@@ -269,22 +269,22 @@ namespace BfFastRoman
                     if (body.Count < 255)
                     {
                         result.Add(i_fwdJumpShort);
-                        result.Add((sbyte) checked((byte) body.Count));
+                        result.Add((sbyte) checked((byte) (body.Count - 1)));
                         foreach (var sub in recurse(lp.Instrs))
                             sub.CompiledPos += result.Count;
                         result.AddRange(body);
                         result.Add(i_bckJumpShort);
-                        result.Add((sbyte) checked((byte) (body.Count + 1)));
+                        result.Add((sbyte) checked((byte) (body.Count + 2)));
                     }
                     else
                     {
                         result.Add(i_fwdJumpLong);
-                        addUshort(body.Count);
+                        addUshort(body.Count - 2);
                         foreach (var sub in recurse(lp.Instrs))
                             sub.CompiledPos += result.Count;
                         result.AddRange(body);
                         result.Add(i_bckJumpLong);
-                        addUshort(body.Count + 2);
+                        addUshort(body.Count + 4);
                     }
                 }
                 else if (instr is OutputInstr)
@@ -559,15 +559,13 @@ namespace BfFastRoman
                     case i_fwdJumpShort:
                         if (*tape == 0)
                             program += *(byte*) program;
-                        else
-                            program++; // optimize: add unconditionally
+                        program++;
                         break;
 
                     case i_bckJumpShort:
                         if (*tape != 0)
                             program -= *(byte*) program;
-                        else
-                            program++; // optimize: add unconditionally
+                        program++;
                         break;
 
                     case i_fwdJumpLong:
@@ -577,8 +575,7 @@ namespace BfFastRoman
                             dist |= (*(byte*) program) << 8;
                             program += dist;
                         }
-                        else
-                            program += 2; // optimize: add unconditionally
+                        program += 2;
                         break;
 
                     case i_bckJumpLong:
@@ -588,8 +585,7 @@ namespace BfFastRoman
                             dist |= (*(byte*) program) << 8;
                             program -= dist;
                         }
-                        else
-                            program += 2; // optimize: add unconditionally
+                        program += 2;
                         break;
 
                     case i_moveZero:
