@@ -252,6 +252,11 @@ namespace BfFastRoman
                     result.Add(i_sum);
                     result.Add(checked((sbyte) sm.Dist));
                 }
+                else if (instr is FindZeroInstr fz)
+                {
+                    result.Add(i_findZero);
+                    result.Add(checked((sbyte) fz.Dist));
+                }
                 else if (instr is LoopInstr lp)
                 {
                     var body = compile(lp.Instrs);
@@ -382,14 +387,14 @@ namespace BfFastRoman
             {
                 if (result[i] is LoopInstr lp)
                 {
+                    lp.Instrs = optimize(lp.Instrs);
                     if (lp.Instrs.Count == 1 && lp.Instrs[0] is AddMoveInstr am && am.Add == -1 && am.Move == 0)
                         result[i] = new MoveZeroInstr { Move = 0 };
+                    else if (lp.Instrs.Count == 1 && lp.Instrs[0] is AddMoveInstr am3 && am3.Add == 0)
+                        result[i] = new FindZeroInstr { Dist = am3.Move };
                     else if (lp.Instrs.Count == 1 && lp.Instrs[0] is AddMoveInstr am2)
                         result[i] = new AddMoveLoopedInstr { Add = am2.Add, Move = am2.Move };
-                    else
-                        lp.Instrs = optimize(lp.Instrs);
-
-                    if (lp.Instrs.Count == 2 && lp.Instrs[0] is AddMoveInstr add1 && lp.Instrs[1] is AddMoveInstr add2 && add1.Add == -1 && add2.Add == 1 && add1.Move == -add2.Move)
+                    else if (lp.Instrs.Count == 2 && lp.Instrs[0] is AddMoveInstr add1 && lp.Instrs[1] is AddMoveInstr add2 && add1.Add == -1 && add2.Add == 1 && add1.Move == -add2.Move)
                         result[i] = new SumInstr { Dist = add1.Move };
                 }
             }
@@ -424,6 +429,12 @@ namespace BfFastRoman
             public int Add, Move;
             public override string ToString() => "[" + (Add > 0 ? new string('+', Add) : new string('-', -Add)) + (Move > 0 ? new string('>', Move) : new string('<', -Move)) + "]";
             public override ConsoleColoredString ToColoredString() => $"[LpA{Add}/M{Move}]".Color(HeatColor);
+        }
+        private class FindZeroInstr : Instr
+        {
+            public int Dist;
+            public override string ToString() => "[" + (Dist > 0 ? new string('>', Dist) : new string('<', -Dist)) + "]";
+            public override ConsoleColoredString ToColoredString() => $"[FindZ{Dist}]".Color(HeatColor);
         }
         private class SumInstr : Instr
         {
@@ -489,6 +500,7 @@ namespace BfFastRoman
         private const sbyte i_moveZero = 107;
         private const sbyte i_addMoveLooped = 108;
         private const sbyte i_sum = 109;
+        private const sbyte i_findZero = 110;
         private const sbyte i_nop = 111;
         private const sbyte i_end = 122;
 
@@ -525,7 +537,7 @@ namespace BfFastRoman
                 sbyte a = *(program++);
                 if (a < i_first)
                 {
-                    * tape += a; // add
+                    *tape += a; // add
                     tape += *(program++); // move
                     continue;
                 }
@@ -565,6 +577,12 @@ namespace BfFastRoman
                         *tape += add;
                         tape += move;
                     }
+                }
+                else if (a == i_findZero)
+                {
+                    sbyte dist = *(program++);
+                    while (*tape != 0)
+                        tape += dist;
                 }
                 else if (a == i_fwdJumpLong)
                 {
