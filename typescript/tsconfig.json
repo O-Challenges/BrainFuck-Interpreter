@@ -1,9 +1,11 @@
 {
     "compileOnSave": true,
     "compilerOptions": {
-        "module": "ESNext",
+        "module": "CommonJS",
+        "target": "ES2016",
         "outDir": "build",
-        "rootDir": "src"
+        "rootDir": "src",
+        "alwaysStrict": true
     },
     "include": ["src"],
     "exclude": ["node_modules"],
