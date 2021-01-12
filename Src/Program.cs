@@ -3,8 +3,9 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Reflection.Emit;
 using System.Runtime.InteropServices;
-using System.Windows.Forms;
+using System.Threading;
 
 [assembly: AssemblyTitle("BrainFJit")]
 [assembly: AssemblyDescription("")]
@@ -97,10 +98,11 @@ namespace BrainFJit
 
         enum Instr
         {
-            AddL,
-            AddR,       // NOTE: Jitter assumes that AddL+1 = AddR
-            SubL,
-            SubR,       // NOTE: Jitter assumes that SubL+1 = SubR
+            Noop,
+            PtrLeft,
+            PtrRight,
+            Add,
+            Sub,
             AddMultL,
             AddMultR,
             SubMultL,
@@ -109,17 +111,11 @@ namespace BrainFJit
             Input,
             Output,
             Jz,
-            Jnz,
-            FindL,
-            FindR,
-            ArrSum
+            Jnz
         }
 
         public unsafe static string InterpretBrainfuck(string bf, TextReader input)
         {
-            var output = new MemoryStream();
-
-
             // ## JITTER STARTS HERE
 
             var blocks = new Stack<List<int>>();
@@ -144,21 +140,10 @@ namespace BrainFJit
                         var len = j - i;
                         switch (bf[i])
                         {
-                            case '+': code.Add((int) Instr.AddL | (len << INSTR_BITS)); break;
-                            case '-': code.Add((int) Instr.SubL | (len << INSTR_BITS)); break;
-                            case '<':
-                                if (code.Count > 0 && ((Instr) (code[code.Count - 1] & INSTR_MASK) == Instr.AddL || (Instr) (code[code.Count - 1] & INSTR_MASK) == Instr.SubL) && (code[code.Count - 1] >> OP2_START) == 0)
-                                    code[code.Count - 1] |= len << OP2_START;
-                                else
-                                    code.Add((int) Instr.AddL | (len << OP2_START));
-                                break;
-                            case '>':
-                                if (code.Count > 0 && ((Instr) (code[code.Count - 1] & INSTR_MASK) == Instr.AddL || (Instr) (code[code.Count - 1] & INSTR_MASK) == Instr.SubL) && (code[code.Count - 1] >> OP2_START) == 0)
-                                    // This “+1” relies on the fact that AddL+1 = AddR and SubL+1 = SubR
-                                    code[code.Count - 1] = (code[code.Count - 1] + 1) | (len << OP2_START);
-                                else
-                                    code.Add((int) Instr.AddR | (len << OP2_START));
-                                break;
+                            case '<': code.Add((int) Instr.PtrLeft | (len << 4)); break;
+                            case '>': code.Add((int) Instr.PtrRight | (len << 4)); break;
+                            case '+': code.Add((int) Instr.Add | (len << 4)); break;
+                            case '-': code.Add((int) Instr.Sub | (len << 4)); break;
                         }
                         i = j - 1;
                         break;
@@ -173,47 +158,28 @@ namespace BrainFJit
                         var outerCode = blocks.Pop();
                         var c = outerCode.Count + (blocks.Count == 0 ? 0 : 1);
 
-                        // OPTIMIZATION: [<<<<] = FindL(4)
-                        var ptrOffset1 = 0;
-                        for (var k = 0; k < code.Count; k++)
-                        {
-                            var ck = code[k];
-                            if (((ck >> INSTR_BITS) & OP_MASK) > 0)
-                                goto jump1;
-                            var it = (Instr) (ck & INSTR_MASK);
-                            if (it == Instr.AddL || it == Instr.SubL)
-                                ptrOffset1 -= ck >> OP2_START;
-                            else if (it == Instr.AddR || it == Instr.SubR)
-                                ptrOffset1 += ck >> OP2_START;
-                            else
-                                goto jump1;
-                        }
-                        outerCode.Add((int) (ptrOffset1 < 0 ? Instr.FindL : Instr.FindR) | (Math.Abs(ptrOffset1) << INSTR_BITS));
-                        goto done;
-                        jump1:
-
                         // OPTIMIZATION: CopyMult/SetZero
-                        var ptrOffset2 = 0;
+                        var ptrOffset = 0;
                         var intOffset = 0;
                         var instrs = new List<int>();
                         for (var k = 0; k < code.Count; k++)
                         {
                             var it = code[k];
-                            switch ((Instr) (it & INSTR_MASK))
+                            switch ((Instr) (it & 0xf))
                             {
-                                case Instr.AddL:
-                                case Instr.AddR:
-                                    if (ptrOffset2 == 0)
+                                case Instr.PtrLeft: ptrOffset -= (it >> INSTR_BITS) & OP_MASK; break;
+                                case Instr.PtrRight: ptrOffset += (it >> INSTR_BITS) & OP_MASK; break;
+                                case Instr.Add:
+                                    if (ptrOffset == 0)
                                         intOffset += (it >> INSTR_BITS) & OP_MASK;
                                     else
-                                        instrs.Add((int) (ptrOffset2 < 0 ? Instr.AddMultL : Instr.AddMultR) | (((it >> INSTR_BITS) & OP_MASK) << INSTR_BITS) | (Math.Abs(ptrOffset2) << OP2_START));
+                                        instrs.Add((int) (ptrOffset < 0 ? Instr.AddMultL : Instr.AddMultR) | (((it >> INSTR_BITS) & OP_MASK) << INSTR_BITS) | (Math.Abs(ptrOffset) << OP2_START));
                                     break;
-                                case Instr.SubL:
-                                case Instr.SubR:
-                                    if (ptrOffset2 == 0)
+                                case Instr.Sub:
+                                    if (ptrOffset == 0)
                                         intOffset -= (it >> INSTR_BITS) & OP_MASK;
                                     else
-                                        instrs.Add((int) (ptrOffset2 < 0 ? Instr.SubMultL : Instr.SubMultR) | (((it >> INSTR_BITS) & OP_MASK) << INSTR_BITS) | (Math.Abs(ptrOffset2) << OP2_START));
+                                        instrs.Add((int) (ptrOffset < 0 ? Instr.SubMultL : Instr.SubMultR) | (((it >> INSTR_BITS) & OP_MASK) << INSTR_BITS) | (Math.Abs(ptrOffset) << OP2_START));
                                     break;
 
                                 case Instr.AddMultL:
@@ -225,47 +191,16 @@ namespace BrainFJit
                                 case Instr.Output:
                                 case Instr.Jz:
                                 case Instr.Jnz:
-                                    goto jump2;
-                            }
-                            switch ((Instr) (it & INSTR_MASK))
-                            {
-                                case Instr.AddL: case Instr.SubL: ptrOffset2 -= it >> OP2_START; break;
-                                case Instr.AddR: case Instr.SubR: ptrOffset2 += it >> OP2_START; break;
+                                    goto optimizationDoesNotApply;
                             }
                         }
-                        if (ptrOffset2 == 0 && intOffset == -1)
+                        if (ptrOffset == 0 && intOffset == -1)
                         {
                             outerCode.AddRange(instrs);
                             outerCode.Add((int) Instr.SetZero);
                             goto done;
                         }
-                        jump2:
-
-
-                        // OPTIMIZATION: [ >1 >9+1× 0 <10 ] ⇒ ArrSum(1,9)
-                        var instr1 = code[0];
-                        var instr1c = (Instr) (instr1 & INSTR_MASK);
-                        if (instr1c != Instr.AddR && instr1c != Instr.SubR)
-                            goto jump3;
-                        if (((instr1 >> INSTR_BITS) & OP_MASK) != 0)
-                            goto jump3;
-                        var instr2 = code[1];
-                        if ((Instr) (instr2 & INSTR_MASK) != Instr.AddMultR)
-                            goto jump3;
-                        if ((Instr) (code[2] & INSTR_MASK) != Instr.SetZero)
-                            goto jump3;
-                        var instr4 = code[3];
-                        var instr4c = (Instr) (instr4 & INSTR_MASK);
-                        if (instr4c != Instr.AddL && instr4c != Instr.SubL)
-                            goto jump3;
-                        var op1 = (instr1 >> OP2_START) & OP_MASK;
-                        var op2 = (instr2 >> OP2_START) & OP_MASK;
-                        if (((instr4 >> INSTR_BITS) & OP_MASK) != 0 || ((instr4 >> OP2_START) & OP_MASK) != (op1 + op2))
-                            goto jump3;
-                        outerCode.Add((int) Instr.ArrSum | (op1 << INSTR_BITS) | (op2 << OP2_START));
-                        goto done;
-
-                        jump3:
+                        optimizationDoesNotApply:
 
 
                         // No optimization triggered
@@ -283,20 +218,194 @@ namespace BrainFJit
             if (blocks.Count != 0)
                 throw new InvalidOperationException("Square brackets are not balanced.");
 
-            //Clipboard.SetText(stringifyCode(code));
+            //System.Windows.Forms.Clipboard.SetText(stringifyCode(code));
 
+            //return InterpretDirectly(input, code);
+            return Compile(input, code);
+        }
 
-            // ## INTERPRETER STARTS HERE
+        public static string Compile(TextReader input, List<int> code)
+        {
+            // ## COMPILER STARTS HERE
+            var asmBuilder = Thread.GetDomain().DefineDynamicAssembly(new AssemblyName("BF_IL"), AssemblyBuilderAccess.RunAndSave);
+            var modBuilder = asmBuilder.DefineDynamicModule(asmBuilder.GetName().Name);
+            var typeBuilder = modBuilder.DefineType("BFRunner", TypeAttributes.Public | TypeAttributes.Abstract | TypeAttributes.Sealed, typeof(object));
+            var methodBuilder = typeBuilder.DefineMethod("Run", MethodAttributes.Public | MethodAttributes.Static, typeof(void), new Type[] { typeof(TextReader), typeof(Stream) });
+            var il = methodBuilder.GetILGenerator();
+            var textReaderReadMethod = typeof(TextReader).GetMethod("Read", BindingFlags.Public | BindingFlags.Instance, null, Type.EmptyTypes, null);
+            var streamWriteMethod = typeof(Stream).GetMethod("WriteByte", BindingFlags.Public | BindingFlags.Instance, null, new[] { typeof(byte) }, null);
+
+            var ptr = il.DeclareLocal(typeof(byte*));
+            il.Emit(OpCodes.Ldc_I4, 16 * 1024);
+            il.Emit(OpCodes.Conv_U);
+            il.Emit(OpCodes.Localloc);
+            il.Emit(OpCodes.Ldc_I4, 4 * 1024);
+            il.Emit(OpCodes.Add);
+            il.Emit(OpCodes.Stloc_0);
+
+            var labels = code
+                .Where(it => (Instr) (it & INSTR_MASK) == Instr.Jz || (Instr) (it & INSTR_MASK) == Instr.Jnz)
+                .ToDictionary(it => (it >> INSTR_BITS) & OP_MASK, it => il.DefineLabel());
+
+            for (var i = 0; i < code.Count; i++)
+            {
+                if (labels.TryGetValue(i, out var lbl))
+                    il.MarkLabel(lbl);
+
+                var op1 = (code[i] >> INSTR_BITS) & OP_MASK;
+                var op2 = (code[i] >> OP2_START) & OP_MASK;
+                switch ((Instr) (code[i] & INSTR_MASK))
+                {
+                    case Instr.PtrLeft:
+                        il.Emit(OpCodes.Ldloc_0);
+                        il.Emit(OpCodes.Ldc_I4, op1);
+                        il.Emit(OpCodes.Sub);
+                        il.Emit(OpCodes.Stloc_0);
+                        break;
+                    case Instr.PtrRight:
+                        il.Emit(OpCodes.Ldloc_0);
+                        il.Emit(OpCodes.Ldc_I4, op1);
+                        il.Emit(OpCodes.Add);
+                        il.Emit(OpCodes.Stloc_0);
+                        break;
+
+                    case Instr.Add:
+                        il.Emit(OpCodes.Ldloc_0);
+                        il.Emit(OpCodes.Dup);
+                        il.Emit(OpCodes.Ldind_U1);
+                        il.Emit(OpCodes.Ldc_I4, op1);
+                        il.Emit(OpCodes.Add);
+                        il.Emit(OpCodes.Conv_U1);
+                        il.Emit(OpCodes.Stind_I1);
+                        break;
+                    case Instr.Sub:
+                        il.Emit(OpCodes.Ldloc_0);
+                        il.Emit(OpCodes.Dup);
+                        il.Emit(OpCodes.Ldind_U1);
+                        il.Emit(OpCodes.Ldc_I4, op1);
+                        il.Emit(OpCodes.Sub);
+                        il.Emit(OpCodes.Conv_U1);
+                        il.Emit(OpCodes.Stind_I1);
+                        break;
+
+                    case Instr.AddMultL:
+                        il.Emit(OpCodes.Ldloc_0);           // (ptr - op2)
+                        il.Emit(OpCodes.Ldc_I4, op2);
+                        il.Emit(OpCodes.Sub);
+                        il.Emit(OpCodes.Dup);
+                        il.Emit(OpCodes.Ldind_U1);        // (ptr - op2) *(ptr - op2)
+
+                        il.Emit(OpCodes.Ldloc_0);
+                        il.Emit(OpCodes.Ldind_U1);
+                        il.Emit(OpCodes.Ldc_I4, op1);
+                        il.Emit(OpCodes.Mul);                  // (ptr - op2) *(ptr - op2) (*ptr * op2)
+                        il.Emit(OpCodes.Add);
+                        il.Emit(OpCodes.Conv_U1);
+                        il.Emit(OpCodes.Stind_I1);             // *(ptr - op2) = *(ptr - op2) + (*ptr * op2)
+                        break;
+
+                    case Instr.AddMultR:
+                        il.Emit(OpCodes.Ldloc_0);
+                        il.Emit(OpCodes.Ldc_I4, op2);
+                        il.Emit(OpCodes.Add);
+                        il.Emit(OpCodes.Dup);
+                        il.Emit(OpCodes.Ldind_U1);
+
+                        il.Emit(OpCodes.Ldloc_0);
+                        il.Emit(OpCodes.Ldind_U1);
+                        il.Emit(OpCodes.Ldc_I4, op1);
+                        il.Emit(OpCodes.Mul);
+                        il.Emit(OpCodes.Add);
+                        il.Emit(OpCodes.Conv_U1);
+                        il.Emit(OpCodes.Stind_I1);
+                        break;
+
+                    case Instr.SubMultL:
+                        il.Emit(OpCodes.Ldloc_0);
+                        il.Emit(OpCodes.Ldc_I4, op2);
+                        il.Emit(OpCodes.Sub);
+                        il.Emit(OpCodes.Dup);
+                        il.Emit(OpCodes.Ldind_U1);
+
+                        il.Emit(OpCodes.Ldloc_0);
+                        il.Emit(OpCodes.Ldind_U1);
+                        il.Emit(OpCodes.Ldc_I4, op1);
+                        il.Emit(OpCodes.Mul);
+                        il.Emit(OpCodes.Sub);
+                        il.Emit(OpCodes.Conv_U1);
+                        il.Emit(OpCodes.Stind_I1);
+                        break;
+
+                    case Instr.SubMultR:
+                        il.Emit(OpCodes.Ldloc_0);
+                        il.Emit(OpCodes.Ldc_I4, op2);
+                        il.Emit(OpCodes.Add);
+                        il.Emit(OpCodes.Dup);
+                        il.Emit(OpCodes.Ldind_U1);
+
+                        il.Emit(OpCodes.Ldloc_0);
+                        il.Emit(OpCodes.Ldind_U1);
+                        il.Emit(OpCodes.Ldc_I4, op1);
+                        il.Emit(OpCodes.Mul);
+                        il.Emit(OpCodes.Sub);
+                        il.Emit(OpCodes.Conv_U1);
+                        il.Emit(OpCodes.Stind_I1);
+                        break;
+
+                    case Instr.SetZero:
+                        il.Emit(OpCodes.Ldloc_0);
+                        il.Emit(OpCodes.Ldc_I4, 0);
+                        il.Emit(OpCodes.Stind_I1);
+                        break;
+
+                    case Instr.Jz:
+                        il.Emit(OpCodes.Ldloc_0);
+                        il.Emit(OpCodes.Ldind_U1);
+                        il.Emit(OpCodes.Brfalse, labels[op1]);
+                        break;
+
+                    case Instr.Jnz:
+                        il.Emit(OpCodes.Ldloc_0);
+                        il.Emit(OpCodes.Ldind_U1);
+                        il.Emit(OpCodes.Brtrue, labels[op1]);
+                        break;
+
+                    case Instr.Input:
+                        il.Emit(OpCodes.Ldloc_0);
+                        il.Emit(OpCodes.Ldarg_0);
+                        il.Emit(OpCodes.Callvirt, textReaderReadMethod);
+                        il.Emit(OpCodes.Conv_U1);
+                        il.Emit(OpCodes.Stind_I1);
+                        break;
+
+                    case Instr.Output:
+                        il.Emit(OpCodes.Ldarg_1);
+                        il.Emit(OpCodes.Ldloc_0);
+                        il.Emit(OpCodes.Ldind_U1);
+                        il.Emit(OpCodes.Callvirt, streamWriteMethod);
+                        break;
+                }
+            }
+            il.Emit(OpCodes.Ret);
+            var method = typeBuilder.CreateType().GetMethod("Run", BindingFlags.Public | BindingFlags.Static);
+
+            var stream = new MemoryStream();
+            method.Invoke(null, new object[] { input, stream });
+            return stream.ToArray().FromUtf8();
+        }
+
+        private static unsafe string InterpretDirectly(TextReader input, List<int> code)
+        {
+            var output = new MemoryStream();
 
             var numInstr = code.Count;
             int* codePtr = stackalloc int[numInstr];
             int* startInstrPtr = codePtr;
             int* lastInstrPtr = codePtr + numInstr;
-            for (i = 0; i < numInstr; i++)
+            for (var i = 0; i < numInstr; i++)
                 *(codePtr + i) = code[i];
             byte* ptr = stackalloc byte[1024 * 16];
 
-            int op;
             unchecked
             {
                 for (; codePtr < lastInstrPtr; codePtr++)
@@ -304,10 +413,10 @@ namespace BrainFJit
                     var instr = *codePtr;
                     switch ((Instr) (instr & INSTR_MASK))
                     {
-                        case Instr.AddL: *ptr = (byte) (*ptr + ((instr >> INSTR_BITS) & OP_MASK)); ptr -= instr >> OP2_START; break;
-                        case Instr.AddR: *ptr = (byte) (*ptr + ((instr >> INSTR_BITS) & OP_MASK)); ptr += instr >> OP2_START; break;
-                        case Instr.SubL: *ptr = (byte) (*ptr - ((instr >> INSTR_BITS) & OP_MASK)); ptr -= instr >> OP2_START; break;
-                        case Instr.SubR: *ptr = (byte) (*ptr - ((instr >> INSTR_BITS) & OP_MASK)); ptr += instr >> OP2_START; break;
+                        case Instr.PtrLeft: ptr -= (instr >> INSTR_BITS) & OP_MASK; break;
+                        case Instr.PtrRight: ptr += (instr >> INSTR_BITS) & OP_MASK; break;
+                        case Instr.Add: *ptr = (byte) (*ptr + ((instr >> INSTR_BITS) & OP_MASK)); break;
+                        case Instr.Sub: *ptr = (byte) (*ptr - ((instr >> INSTR_BITS) & OP_MASK)); break;
 
                         case Instr.AddMultL: *(ptr - (instr >> OP2_START)) += (byte) (((instr >> INSTR_BITS) & OP_MASK) * *ptr); break;
                         case Instr.AddMultR: *(ptr + (instr >> OP2_START)) += (byte) (((instr >> INSTR_BITS) & OP_MASK) * *ptr); break;
@@ -315,23 +424,8 @@ namespace BrainFJit
                         case Instr.SubMultR: *(ptr + (instr >> OP2_START)) -= (byte) (((instr >> INSTR_BITS) & OP_MASK) * *ptr); break;
                         case Instr.SetZero: *ptr = 0; break;
 
-                        case Instr.FindL: op = instr >> INSTR_BITS; while (*ptr != 0) ptr -= op; break;
-                        case Instr.FindR: op = instr >> INSTR_BITS; while (*ptr != 0) ptr += op; break;
-
                         case Instr.Jz: if (*ptr == 0) codePtr = startInstrPtr + (instr >> INSTR_BITS); break;
                         case Instr.Jnz: if (*ptr != 0) codePtr = startInstrPtr + (instr >> INSTR_BITS); break;
-
-                        case Instr.ArrSum:
-                            op = (instr >> INSTR_BITS) & OP_MASK;
-                            var op2 = (instr >> OP2_START) & OP_MASK;
-                            while (*ptr != 0)
-                            {
-                                ptr += op;
-                                *(ptr + op2) = *ptr;
-                                *ptr = 0;
-                                ptr -= op + op2;
-                            }
-                            break;
 
                         case Instr.Input:
                             int ch;
@@ -351,8 +445,8 @@ namespace BrainFJit
                                 output.WriteByte(*ptr);
                             /*/
                             // Output every character
-                            //Console.Write((char) *ptr);
-                            output.WriteByte(*ptr);
+                            Console.Write((char) *ptr);
+                            //output.WriteByte(*ptr);
                             /**/
                             break;
                     }
@@ -368,10 +462,10 @@ namespace BrainFJit
             var op2 = i >> OP2_START;
             return ((Instr) (i & INSTR_MASK)) switch
             {
-                Instr.AddL => $"{(op1 > 0 ? $"+{op1}" : null)}{(op2 > 0 ? $"<{op2}" : null)}",
-                Instr.AddR => $"{(op1 > 0 ? $"+{op1}" : null)}{(op2 > 0 ? $">{op2}" : null)}",
-                Instr.SubL => $"{(op1 > 0 ? $"-{op1}" : null)}{(op2 > 0 ? $"<{op2}" : null)}",
-                Instr.SubR => $"{(op1 > 0 ? $"-{op1}" : null)}{(op2 > 0 ? $">{op2}" : null)}",
+                Instr.PtrLeft => $"<{i >> 4}",
+                Instr.PtrRight => $">{i >> 4}",
+                Instr.Add => $"+{i >> 4}",
+                Instr.Sub => $"-{i >> 4}",
                 Instr.AddMultL => $"<{op2}+{op1}×",
                 Instr.AddMultR => $">{op2}+{op1}×",
                 Instr.SubMultL => $"<{op2}-{op1}×",
@@ -383,9 +477,6 @@ namespace BrainFJit
                 //Instr.Jnz => $"{ix}]{i >> INSTR_BITS}",
                 Instr.Jz => "[",
                 Instr.Jnz => "]",
-                Instr.FindL => $"<{op1}f",
-                Instr.FindR => $">{op1}f",
-                Instr.ArrSum => $"A({op1},{op2})",
                 _ => "?",
             };
         }));
