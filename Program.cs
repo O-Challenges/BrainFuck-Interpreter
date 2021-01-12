@@ -554,112 +554,116 @@ namespace BfFastRoman
 #endif
 
                 sbyte a = *(program++);
-                if (a < i_first)
+                switch (a)
                 {
-                    *tape += a; // add
-                    tape += *(program++); // move
-                    continue;
-                }
-                // less common cases
-                if (a == i_bckJumpShort)
-                {
-                    if (*tape != 0)
-                        program -= *(byte*) program;
-                    else
-                        program++; // optimize: add unconditionally
-                }
-                else if (a == i_sum)
-                {
-                    sbyte dist = *(program++);
-                    sbyte val = *tape;
-                    *(tape + dist) += val;
-                    *tape = 0;
-                }
-                else if (a == i_fwdJumpShort)
-                {
-                    if (*tape == 0)
-                        program += *(byte*) program;
-                    else
-                        program++; // optimize: add unconditionally
-                }
-                else if (a == i_moveZero)
-                {
-                    tape += *(program++); // move
-                    *tape = 0;
-                }
-                else if (a == i_addMoveLooped)
-                {
-                    sbyte add = *(program++);
-                    sbyte move = *(program++);
-                    while (*tape != 0)
-                    {
-                        *tape += add;
-                        tape += move;
-                    }
-                }
-                else if (a == i_findZero)
-                {
-                    sbyte dist = *(program++);
-                    while (*tape != 0)
-                        tape += dist;
-                }
-                else if (a == i_sumArr)
-                {
-                    sbyte step = *(program++);
-                    sbyte width = *(program++);
-                    while (*tape != 0)
-                    {
-                        tape += step;
-                        *(tape + width) += *tape;
-                        *tape = 0;
-                        tape -= step + width;
-                    }
-                }
-                else if (a == i_fwdJumpLong)
-                {
-                    if (*tape == 0)
-                    {
-                        int dist = *(byte*) (program++);
-                        dist |= (*(byte*) program) << 8;
-                        program += dist;
-                    }
-                    else
-                        program += 2; // optimize: add unconditionally
-                }
-                else if (a == i_bckJumpLong)
-                {
-                    if (*tape != 0)
-                    {
-                        int dist = *(byte*) (program++);
-                        dist |= (*(byte*) program) << 8;
-                        program -= dist;
-                    }
-                    else
-                        program += 2; // optimize: add unconditionally
-                }
-                else if (a == i_output)
-                {
-#if DEBUG
-                    output.WriteByte(*(byte*) tape);
-#else
-                    outpt.Add(*(byte*) tape);
-#endif
-                }
-                else if (a == i_input)
-                {
-                    flushOutput();
-                    throw new NotImplementedException();
-                }
-                else if (a == i_nop)
-                { }
-                else if (a == i_end)
-                {
-                    flushOutput();
-                    return;
-                }
+                    case i_fwdJumpShort:
+                        if (*tape == 0)
+                            program += *(byte*) program;
+                        else
+                            program++; // optimize: add unconditionally
+                        break;
 
-                else
-                    throw new Exception();
+                    case i_bckJumpShort:
+                        if (*tape != 0)
+                            program -= *(byte*) program;
+                        else
+                            program++; // optimize: add unconditionally
+                        break;
+
+                    case i_fwdJumpLong:
+                        if (*tape == 0)
+                        {
+                            int dist = *(byte*) (program++);
+                            dist |= (*(byte*) program) << 8;
+                            program += dist;
+                        }
+                        else
+                            program += 2; // optimize: add unconditionally
+                        break;
+
+                    case i_bckJumpLong:
+                        if (*tape != 0)
+                        {
+                            int dist = *(byte*) (program++);
+                            dist |= (*(byte*) program) << 8;
+                            program -= dist;
+                        }
+                        else
+                            program += 2; // optimize: add unconditionally
+                        break;
+
+                    case i_moveZero:
+                        tape += *(program++); // move
+                        *tape = 0;
+                        break;
+
+                    case i_findZero:
+                        {
+                            sbyte dist = *(program++);
+                            while (*tape != 0)
+                                tape += dist;
+                        }
+                        break;
+
+                    case i_sum:
+                        {
+                            sbyte dist = *(program++);
+                            sbyte val = *tape;
+                            *(tape + dist) += val;
+                            *tape = 0;
+                        }
+                        break;
+
+                    case i_addMoveLooped:
+                        {
+                            sbyte add = *(program++);
+                            sbyte move = *(program++);
+                            while (*tape != 0)
+                            {
+                                *tape += add;
+                                tape += move;
+                            }
+                        }
+                        break;
+
+                    case i_sumArr:
+                        {
+                            sbyte step = *(program++);
+                            sbyte width = *(program++);
+                            while (*tape != 0)
+                            {
+                                tape += step;
+                                *(tape + width) += *tape;
+                                *tape = 0;
+                                tape -= step + width;
+                            }
+                        }
+                        break;
+
+                    case i_input:
+                        flushOutput();
+                        throw new NotImplementedException();
+
+                    case i_output:
+#if DEBUG
+                        output.WriteByte(*(byte*) tape);
+#else
+                        outpt.Add(*(byte*) tape);
+#endif
+                        break;
+
+                    case i_nop:
+                        break;
+
+                    case i_end:
+                        flushOutput();
+                        return;
+
+                    default:
+                        *tape += a; // add
+                        tape += *(program++); // move
+                        break;
+                }
             }
         }
     }
