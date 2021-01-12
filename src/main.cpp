@@ -10,26 +10,20 @@ class bfShell
 {
 public:
     bfShell()
-    {
-        char* buffer = new char[BUFFER_SIZE];
-        bufferStrip = buffer;
-    }
+    {}
 
     void clock()
     {
-        std::cout<<"t"<<std::endl;
         parseChar(*instructionIndex);
         nextInstruction();
     }
 
     ~bfShell()
-    {
-        delete bufferStrip;
-    }
+    {}
 
 private:
-    char* bufferStrip;
-    char* bufferPos = bufferStrip;
+    char bufferStrip[30000];
+    char* bufferPos = &bufferStrip[0];
     char instructions[107] = "++++++++[>++++[>++>+++>+++>+<<<<-]>+>+>->>+[<]<-]>>.>---.+++++++..+++.>>.<-.<.+++.------.--------.>>+.>++.";
     char* instructionIndex = &instructions[0];
 
@@ -48,12 +42,10 @@ private:
         switch (type)
         {
         case '+':
-            std::cout<<"t"<<std::endl;
             addToBufferStrip();
             break;
         
         default:
-            std::cout<<"t"<<std::endl;
             break;
         }
     }
