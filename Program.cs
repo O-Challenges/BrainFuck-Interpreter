@@ -1,9 +1,10 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
 using RT.Util;
+using RT.Util.Consoles;
 using RT.Util.ExtensionMethods;
 
 namespace BfFastRoman
@@ -173,6 +174,23 @@ namespace BfFastRoman
                 throw new Exception();
             var compiled = compile(optimized);
             compiled.Add(i_end);
+
+            //var allInstrs = recurse(optimized).ToList();
+            //var positions = allInstrs.OrderBy(i => i.CompiledPos).Select(i => i.CompiledPos).ToList();
+
+            var hotInstructions = new[] { 1211, 1213, 1214, 1315, 1317, 1318, 1324, 1326, 1332, 1333, 1335, 1337, 1338, 1555, 1557, 1558, 1564, 1566, 1572, 1573, 1575, 1577, 1578, 1727, 1729, 1730, 2606, 2608, 2609, 2710, 2712, 2713, 2719, 2721, 2727, 2728, 2730, 2732, 2733, 2855, 2857, 2858, 4290, 4292, 4293, 4394, 4396, 4397, 4403, 4405, 4411, 4412, 4414, 4416, 4417, 4592, 4594, 4595, 4601, 4603, 4609, 4610, 4612, 4614, 4615, 4735, 4737, 4738 };
+            hotInstructions = hotInstructions.Where(i => !(compiled[i] == i_bckJumpLong || compiled[i] == i_bckJumpShort || compiled[i] == i_nop)).ToArray();
+            int hotcount = 0;
+            foreach (var instr in recurse(optimized))
+            {
+                instr.Heat = hotInstructions.Contains(instr.CompiledPos) ? 1 : 0;
+                if (instr.Heat > 0)
+                    hotcount++;
+            }
+            foreach (var instr in optimized)
+                ConsoleUtil.Write(instr.ToColoredString());
+            Console.WriteLine();
+
             unsafe
             {
                 fixed (sbyte* prg = compiled.ToArray())
@@ -212,6 +230,7 @@ namespace BfFastRoman
             }
             foreach (var instr in prog)
             {
+                instr.CompiledPos = result.Count;
                 if (instr is AddMoveInstr am)
                 {
                     if (am.Add < sbyte.MinValue || am.Add >= i_first)
@@ -231,6 +250,8 @@ namespace BfFastRoman
                     {
                         result.Add(i_fwdJumpShort);
                         result.Add((sbyte) checked((byte) body.Count));
+                        foreach (var sub in recurse(lp.Instrs))
+                            sub.CompiledPos += result.Count;
                         result.AddRange(body);
                         result.Add(i_bckJumpShort);
                         result.Add((sbyte) checked((byte) (body.Count + 1)));
@@ -239,6 +260,8 @@ namespace BfFastRoman
                     {
                         result.Add(i_fwdJumpLong);
                         addUshort(body.Count);
+                        foreach (var sub in recurse(lp.Instrs))
+                            sub.CompiledPos += result.Count;
                         result.AddRange(body);
                         result.Add(i_bckJumpLong);
                         addUshort(body.Count + 2);
@@ -253,6 +276,17 @@ namespace BfFastRoman
             }
             result.Add(i_nop); // ugh... this was added for debugging and it fixed mandelbrot. Optimize it away!
             return result;
+        }
+
+        private static IEnumerable<Instr> recurse(List<Instr> instrs)
+        {
+            foreach (var instr in instrs)
+            {
+                yield return instr;
+                if (instr is LoopInstr lp)
+                    foreach (var i in recurse(lp.Instrs))
+                        yield return i;
+            }
         }
 
         static int pos;
@@ -351,7 +385,12 @@ namespace BfFastRoman
             return result;
         }
 
-        private abstract class Instr { }
+        private abstract class Instr
+        {
+            public int CompiledPos; public double Heat;
+            protected ConsoleColor HeatColor => Heat == 0 ? ConsoleColor.Gray : ConsoleColor.Magenta;
+            public virtual ConsoleColoredString ToColoredString() => ToString().Color(HeatColor);
+        }
         private class InputInstr : Instr
         {
             public override string ToString() => ",";
@@ -364,11 +403,13 @@ namespace BfFastRoman
         {
             public int Add, Move;
             public override string ToString() => (Add > 0 ? new string('+', Add) : new string('-', -Add)) + (Move > 0 ? new string('>', Move) : new string('<', -Move));
+            public override ConsoleColoredString ToColoredString() => $"A{Add}M{Move}".Color(HeatColor);
         }
         private class LoopInstr : Instr
         {
             public List<Instr> Instrs = new List<Instr>();
             public override string ToString() => "[" + string.Join("", Instrs.Select(s => s.ToString())) + "]";
+            public override ConsoleColoredString ToColoredString() => "[".Color(HeatColor) + Instrs.Select(i => i.ToColoredString()).JoinColoredString() + "]".Color(HeatColor);
         }
         private class MoveZeroInstr : Instr
         {
@@ -410,6 +451,8 @@ namespace BfFastRoman
             var cc = counts.OrderByDescending(kvp => kvp.Value).ToList();
         }
 
+        private static uint[] heatmap = new uint[10000];
+
         private const sbyte i_first = 100;
         private const sbyte i_fwdJumpShort = 101;
         private const sbyte i_fwdJumpLong = 102;
@@ -419,7 +462,7 @@ namespace BfFastRoman
         private const sbyte i_input = 106;
         private const sbyte i_moveZero = 107;
         private const sbyte i_nop = 111;
-        private const sbyte i_end = 126;
+        private const sbyte i_end = 122;
 
         private unsafe static void Execute(sbyte* program, Stream input, Stream output, int progLen)
         {
@@ -438,6 +481,8 @@ namespace BfFastRoman
 #if DEBUG
                 if (tape < tapeStart || tape >= tapeEnd) throw new Exception();
                 if (program < progStart || program >= progEnd) throw new Exception();
+                checked { heatmap[program - progStart]++; }
+                // heatmap.SelectIndexWhere(c => c > 20000000).ToList().JoinString(",")	""	string
 #endif
 
                 sbyte a = *(program++);
