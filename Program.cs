@@ -85,11 +85,11 @@ namespace BrainFJit
             var Mandelbrot = File.ReadAllText("mandelbrot.b");
 
             var start = DateTime.UtcNow;
-            InterpretBrainfuck(Mandelbrot,
+            var output = InterpretBrainfuck(Mandelbrot,
                 Console.In
             //new StreamReader(File.OpenRead(@"D:\c\BrainFuck-Interpreter-Challenge\gameoflife-input.txt"))
             );
-            Console.WriteLine();
+            Console.WriteLine(output);
             Console.WriteLine($"Took {(DateTime.UtcNow - start).TotalSeconds:0.00} sec.");
             Console.WriteLine($"{IntPtr.Size * 8}-bit");
             Console.ReadLine();
@@ -115,7 +115,7 @@ namespace BrainFJit
             FindR
         }
 
-        public unsafe static void InterpretBrainfuck(string bf, TextReader input)
+        public unsafe static string InterpretBrainfuck(string bf, TextReader input)
         {
             var output = new MemoryStream();
 
@@ -311,12 +311,15 @@ namespace BrainFJit
                                 output.WriteByte(*ptr);
                             /*/
                             // Output every character
-                            Console.Write((char) *ptr);
+                            //Console.Write((char) *ptr);
+                            output.WriteByte(*ptr);
                             /**/
                             break;
                     }
                 }
             }
+
+            return output.ToArray().FromUtf8();
         }
 
         private static string stringifyCode(List<int> code) => string.Join(" ", code.Select((i, ix) => ((Instr) (i & INSTR_MASK)) switch
