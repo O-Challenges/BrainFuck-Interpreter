@@ -239,6 +239,12 @@ namespace BfFastRoman
                     result.Add((sbyte) am.Add);
                     result.Add(checked((sbyte) am.Move));
                 }
+                else if (instr is AddMoveLoopedInstr am2)
+                {
+                    result.Add(i_addMoveLooped);
+                    result.Add(checked((sbyte) am2.Add));
+                    result.Add(checked((sbyte) am2.Move));
+                }
                 else if (instr is MoveZeroInstr mz)
                 {
                     result.Add(i_moveZero);
@@ -376,6 +382,8 @@ namespace BfFastRoman
                 {
                     if (lp.Instrs.Count == 1 && lp.Instrs[0] is AddMoveInstr am && am.Add == -1 && am.Move == 0)
                         result[i] = new MoveZeroInstr { Move = 0 };
+                    else if (lp.Instrs.Count == 1 && lp.Instrs[0] is AddMoveInstr am2)
+                        result[i] = new AddMoveLoopedInstr { Add = am2.Add, Move = am2.Move };
                     else
                         lp.Instrs = optimize(lp.Instrs);
                 }
@@ -404,6 +412,12 @@ namespace BfFastRoman
         {
             public int Add, Move;
             public override string ToString() => (Add > 0 ? new string('+', Add) : new string('-', -Add)) + (Move > 0 ? new string('>', Move) : new string('<', -Move));
+            public override ConsoleColoredString ToColoredString() => $"A{Add}M{Move}".Color(HeatColor);
+        }
+        private class AddMoveLoopedInstr : Instr
+        {
+            public int Add, Move;
+            public override string ToString() => "[" + (Add > 0 ? new string('+', Add) : new string('-', -Add)) + (Move > 0 ? new string('>', Move) : new string('<', -Move)) + "]";
             public override ConsoleColoredString ToColoredString() => $"A{Add}M{Move}".Color(HeatColor);
         }
         private class LoopInstr : Instr
@@ -462,6 +476,7 @@ namespace BfFastRoman
         private const sbyte i_output = 105;
         private const sbyte i_input = 106;
         private const sbyte i_moveZero = 107;
+        private const sbyte i_addMoveLooped = 108;
         private const sbyte i_nop = 111;
         private const sbyte i_end = 122;
 
@@ -522,9 +537,23 @@ namespace BfFastRoman
                     tape += *(program++); // move
                     *tape = 0;
                 }
+                else if (a == i_addMoveLooped)
+                {
+                    sbyte add = *(program++);
+                    sbyte move = *(program++);
+                    while (*tape != 0)
+                    {
+                        *tape += add;
+                        tape += move;
+                    }
+                }
                 else if (a == i_output)
                 {
+#if DEBUG
+                    output.WriteByte(*(byte*) tape);
+#else
                     outpt.Add(*(byte*) tape);
+#endif
                 }
                 else if (a == i_input)
                 {
