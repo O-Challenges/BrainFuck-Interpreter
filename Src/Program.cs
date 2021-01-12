@@ -263,17 +263,18 @@ namespace BrainFJit
 
             var numInstr = code.Count;
             int* codePtr = stackalloc int[numInstr];
+            int* startInstrPtr = codePtr;
+            int* lastInstrPtr = codePtr + numInstr;
             for (i = 0; i < numInstr; i++)
                 *(codePtr + i) = code[i];
             byte* ptr = stackalloc byte[1024 * 16];
 
-            i = 0;
             int op;
             unchecked
             {
-                for (; i < numInstr; i++)
+                for (; codePtr < lastInstrPtr; codePtr++)
                 {
-                    var instr = *(codePtr + i);
+                    var instr = *codePtr;
                     switch ((Instr) (instr & INSTR_MASK))
                     {
                         case Instr.AddL: *ptr = (byte) (*ptr + ((instr >> INSTR_BITS) & OP_MASK)); ptr -= instr >> OP2_START; break;
@@ -290,8 +291,8 @@ namespace BrainFJit
                         case Instr.FindL: op = instr >> INSTR_BITS; while (*ptr != 0) ptr -= op; break;
                         case Instr.FindR: op = instr >> INSTR_BITS; while (*ptr != 0) ptr += op; break;
 
-                        case Instr.Jz: if (*ptr == 0) i = instr >> INSTR_BITS; break;
-                        case Instr.Jnz: if (*ptr != 0) i = instr >> INSTR_BITS; break;
+                        case Instr.Jz: if (*ptr == 0) codePtr = startInstrPtr + (instr >> INSTR_BITS); break;
+                        case Instr.Jnz: if (*ptr != 0) codePtr = startInstrPtr + (instr >> INSTR_BITS); break;
 
                         case Instr.Input:
                             int ch;
