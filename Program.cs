@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Windows.Forms;
 
 [assembly: AssemblyTitle("BrainFJit")]
 [assembly: AssemblyDescription("")]
@@ -22,6 +23,12 @@ namespace BrainFJit
 {
     public class Program
     {
+        const int INSTR_BITS = 4;   // each instruction opcode is stored in the lowest INSTR_BITS bits
+        const int INSTR_MASK = (1 << INSTR_BITS) - 1;
+        const int OP_BITS = 14;     // number of bits for each operand
+        const int OP_MASK = (1 << OP_BITS) - 1;
+        const int OP2_START = INSTR_BITS + OP_BITS;    // bit where the second operand starts
+
         [STAThread]
         static void Main(string[] args)
         {
@@ -91,10 +98,10 @@ namespace BrainFJit
         enum Instr
         {
             Noop,
-            PtrLeft,
-            PtrRight,
-            Add,
-            Sub,
+            AddL,
+            AddR,       // NOTE: Jitter assumes that AddL+1 = AddR
+            SubL,
+            SubR,       // NOTE: Jitter assumes that SubL+1 = SubR
             AddMultL,
             AddMultR,
             SubMultL,
@@ -103,7 +110,9 @@ namespace BrainFJit
             Input,
             Output,
             Jz,
-            Jnz
+            Jnz,
+            FindL,
+            FindR
         }
 
         public unsafe static void InterpretBrainfuck(string bf, TextReader input)
@@ -130,15 +139,26 @@ namespace BrainFJit
                     case '+':
                     case '-':
                         var j = i + 1;
-                        while (j < bf.Length && bf[j] == bf[i])
+                        while (j < bf.Length && bf[j] == bf[i] && j - i < OP_MASK)
                             j++;
                         var len = j - i;
                         switch (bf[i])
                         {
-                            case '<': code.Add((int) Instr.PtrLeft | (len << 4)); break;
-                            case '>': code.Add((int) Instr.PtrRight | (len << 4)); break;
-                            case '+': code.Add((int) Instr.Add | (len << 4)); break;
-                            case '-': code.Add((int) Instr.Sub | (len << 4)); break;
+                            case '+': code.Add((int) Instr.AddL | (len << INSTR_BITS)); break;
+                            case '-': code.Add((int) Instr.SubL | (len << INSTR_BITS)); break;
+                            case '<':
+                                if (code.Count > 0 && ((Instr) (code[code.Count - 1] & INSTR_MASK) == Instr.AddL || (Instr) (code[code.Count - 1] & INSTR_MASK) == Instr.SubL) && (code[code.Count - 1] >> OP2_START) == 0)
+                                    code[code.Count - 1] |= len << OP2_START;
+                                else
+                                    code.Add((int) Instr.AddL | (len << OP2_START));
+                                break;
+                            case '>':
+                                if (code.Count > 0 && ((Instr) (code[code.Count - 1] & INSTR_MASK) == Instr.AddL || (Instr) (code[code.Count - 1] & INSTR_MASK) == Instr.SubL) && (code[code.Count - 1] >> OP2_START) == 0)
+                                    // This “+1” relies on the fact that AddL+1 = AddR and SubL+1 = SubR
+                                    code[code.Count - 1] = (code[code.Count - 1] + 1) | (len << OP2_START);
+                                else
+                                    code.Add((int) Instr.AddR | (len << OP2_START));
+                                break;
                         }
                         i = j - 1;
                         break;
@@ -150,21 +170,51 @@ namespace BrainFJit
                         break;
 
                     case ']':
-                        // Analyze if `code` is reducible to CopyMult/SetZero
-                        var brackets = true;
-                        var ptrOffset = 0;
+                        var outerCode = blocks.Pop();
+                        var c = outerCode.Count + (blocks.Count == 0 ? 0 : 1);
+
+                        // OPTIMIZATION: [<<<<] = FindL(4)
+                        var ptrOffset1 = 0;
+                        for (var k = 0; k < code.Count; k++)
+                        {
+                            var ck = code[k];
+                            if (((ck >> INSTR_BITS) & OP_MASK) > 0)
+                                goto jump1;
+                            var it = (Instr) (ck & INSTR_MASK);
+                            if (it == Instr.AddL || it == Instr.SubL)
+                                ptrOffset1 -= ck >> OP2_START;
+                            else if (it == Instr.AddR || it == Instr.SubR)
+                                ptrOffset1 += ck >> OP2_START;
+                            else
+                                goto jump1;
+                        }
+                        outerCode.Add((int) (ptrOffset1 < 0 ? Instr.FindL : Instr.FindR) | (Math.Abs(ptrOffset1) << INSTR_BITS));
+                        goto done;
+                        jump1:
+
+                        // OPTIMIZATION: CopyMult/SetZero
+                        var ptrOffset2 = 0;
                         var intOffset = 0;
                         var instrs = new List<int>();
-                        var invalid = false;
                         for (var k = 0; k < code.Count; k++)
                         {
                             var it = code[k];
-                            switch ((Instr) (it & 0xf))
+                            switch ((Instr) (it & INSTR_MASK))
                             {
-                                case Instr.PtrLeft: ptrOffset -= it >> 4; break;
-                                case Instr.PtrRight: ptrOffset += it >> 4; break;
-                                case Instr.Add: if (ptrOffset == 0) intOffset += it >> 4; else instrs.Add((int) (ptrOffset < 0 ? Instr.AddMultL : Instr.AddMultR) | ((it >> 4) << 4) | (Math.Abs(ptrOffset) << 18)); break;
-                                case Instr.Sub: if (ptrOffset == 0) intOffset -= it >> 4; else instrs.Add((int) (ptrOffset < 0 ? Instr.SubMultL : Instr.SubMultR) | ((it >> 4) << 4) | (Math.Abs(ptrOffset) << 18)); break;
+                                case Instr.AddL:
+                                case Instr.AddR:
+                                    if (ptrOffset2 == 0)
+                                        intOffset += (it >> INSTR_BITS) & OP_MASK;
+                                    else
+                                        instrs.Add((int) (ptrOffset2 < 0 ? Instr.AddMultL : Instr.AddMultR) | (((it >> INSTR_BITS) & OP_MASK) << INSTR_BITS) | (Math.Abs(ptrOffset2) << OP2_START));
+                                    break;
+                                case Instr.SubL:
+                                case Instr.SubR:
+                                    if (ptrOffset2 == 0)
+                                        intOffset -= (it >> INSTR_BITS) & OP_MASK;
+                                    else
+                                        instrs.Add((int) (ptrOffset2 < 0 ? Instr.SubMultL : Instr.SubMultR) | (((it >> INSTR_BITS) & OP_MASK) << INSTR_BITS) | (Math.Abs(ptrOffset2) << OP2_START));
+                                    break;
 
                                 case Instr.AddMultL:
                                 case Instr.AddMultR:
@@ -175,31 +225,28 @@ namespace BrainFJit
                                 case Instr.Output:
                                 case Instr.Jz:
                                 case Instr.Jnz:
-                                    //invalid = true;
-                                    //break;
-                                    goto invalid;
+                                    goto jump2;
+                            }
+                            switch ((Instr) (it & INSTR_MASK))
+                            {
+                                case Instr.AddL: case Instr.SubL: ptrOffset2 -= it >> OP2_START; break;
+                                case Instr.AddR: case Instr.SubR: ptrOffset2 += it >> OP2_START; break;
                             }
                         }
-                        if (!invalid && ptrOffset == 0 && intOffset == -1)
+                        if (ptrOffset2 == 0 && intOffset == -1)
                         {
-                            instrs.Add((int) Instr.SetZero);
-                            code = instrs;
-                            brackets = false;
+                            outerCode.AddRange(instrs);
+                            outerCode.Add((int) Instr.SetZero);
+                            goto done;
                         }
-                        //else if (ptrOffset == 0)
-                        //{
-                        //    Console.WriteLine(stringifyCode(code));
-                        //}
-                        invalid:;
+                        jump2:
 
-                        // Pop
-                        var outerCode = blocks.Pop();
-                        var c = outerCode.Count + (blocks.Count == 0 ? 0 : 1);
-                        if (brackets)
-                            outerCode.Add((int) Instr.Jz | ((offset + code.Count + 1) << 4));
+                        // No optimization triggered
+                        outerCode.Add((int) Instr.Jz | ((offset + code.Count + 1) << 4));
                         outerCode.AddRange(code);
-                        if (brackets)
-                            outerCode.Add((int) Instr.Jnz | (offset << 4));
+                        outerCode.Add((int) Instr.Jnz | (offset << 4));
+
+                        done:
                         code = outerCode;
                         offset -= c;
                         break;
@@ -221,22 +268,31 @@ namespace BrainFJit
             byte* ptr = stackalloc byte[1024 * 16];
 
             i = 0;
+            int op;
             unchecked
             {
                 for (; i < numInstr; i++)
                 {
                     var instr = *(codePtr + i);
-                    switch ((Instr) (instr & 0xf))
+                    switch ((Instr) (instr & INSTR_MASK))
                     {
-                        case Instr.PtrLeft: ptr -= instr >> 4; break;
-                        case Instr.PtrRight: ptr += instr >> 4; break;
-                        case Instr.Add: *ptr = (byte) (*ptr + (instr >> 4)); break;
-                        case Instr.Sub: *ptr = (byte) (*ptr - (instr >> 4)); break;
-                        case Instr.AddMultL: *(ptr - (instr >> 18)) += (byte) (((instr >> 4) & 0x3fff) * *ptr); break;
-                        case Instr.AddMultR: *(ptr + (instr >> 18)) += (byte) (((instr >> 4) & 0x3fff) * *ptr); break;
-                        case Instr.SubMultL: *(ptr - (instr >> 18)) -= (byte) (((instr >> 4) & 0x3fff) * *ptr); break;
-                        case Instr.SubMultR: *(ptr + (instr >> 18)) -= (byte) (((instr >> 4) & 0x3fff) * *ptr); break;
+                        case Instr.AddL: *ptr = (byte) (*ptr + ((instr >> INSTR_BITS) & OP_MASK)); ptr -= instr >> OP2_START; break;
+                        case Instr.AddR: *ptr = (byte) (*ptr + ((instr >> INSTR_BITS) & OP_MASK)); ptr += instr >> OP2_START; break;
+                        case Instr.SubL: *ptr = (byte) (*ptr - ((instr >> INSTR_BITS) & OP_MASK)); ptr -= instr >> OP2_START; break;
+                        case Instr.SubR: *ptr = (byte) (*ptr - ((instr >> INSTR_BITS) & OP_MASK)); ptr += instr >> OP2_START; break;
+
+                        case Instr.AddMultL: *(ptr - (instr >> OP2_START)) += (byte) (((instr >> INSTR_BITS) & OP_MASK) * *ptr); break;
+                        case Instr.AddMultR: *(ptr + (instr >> OP2_START)) += (byte) (((instr >> INSTR_BITS) & OP_MASK) * *ptr); break;
+                        case Instr.SubMultL: *(ptr - (instr >> OP2_START)) -= (byte) (((instr >> INSTR_BITS) & OP_MASK) * *ptr); break;
+                        case Instr.SubMultR: *(ptr + (instr >> OP2_START)) -= (byte) (((instr >> INSTR_BITS) & OP_MASK) * *ptr); break;
                         case Instr.SetZero: *ptr = 0; break;
+
+                        case Instr.FindL: op = instr >> INSTR_BITS; while (*ptr != 0) ptr -= op; break;
+                        case Instr.FindR: op = instr >> INSTR_BITS; while (*ptr != 0) ptr += op; break;
+
+                        case Instr.Jz: if (*ptr == 0) i = instr >> INSTR_BITS; break;
+                        case Instr.Jnz: if (*ptr != 0) i = instr >> INSTR_BITS; break;
+
                         case Instr.Input:
                             int ch;
                             while ((ch = input.Read()) == 13) ;     // intentionally ignore '\r'
@@ -258,29 +314,31 @@ namespace BrainFJit
                             Console.Write((char) *ptr);
                             /**/
                             break;
-                        case Instr.Jz: if (*ptr == 0) i = instr >> 4; break;
-                        case Instr.Jnz: if (*ptr != 0) i = instr >> 4; break;
                     }
                 }
             }
         }
 
-        private static string stringifyCode(List<int> code) => string.Join(" ", code.Select((i, ix) => ((Instr) (i & 0xf)) switch
+        private static string stringifyCode(List<int> code) => string.Join(" ", code.Select((i, ix) => ((Instr) (i & INSTR_MASK)) switch
         {
             Instr.Noop => $"/",
-            Instr.PtrLeft => $"<{i >> 4}",
-            Instr.PtrRight => $">{i >> 4}",
-            Instr.Add => $"+{i >> 4}",
-            Instr.Sub => $"-{i >> 4}",
-            Instr.AddMultL => $"<{i >> 18}+{(i >> 4) & 0x3fff}×",
-            Instr.AddMultR => $">{i >> 18}+{(i >> 4) & 0x3fff}×",
-            Instr.SubMultL => $"<{i >> 18}-{(i >> 4) & 0x3fff}×",
-            Instr.SubMultR => $">{i >> 18}-{(i >> 4) & 0x3fff}×",
+            Instr.AddL => $"{(((i >> INSTR_BITS) & OP_MASK) > 0 ? $"+{(i >> INSTR_BITS) & OP_MASK}" : null)}{((i >> OP2_START) > 0 ? $"<{i >> OP2_START}" : null)}",
+            Instr.AddR => $"{(((i >> INSTR_BITS) & OP_MASK) > 0 ? $"+{(i >> INSTR_BITS) & OP_MASK}" : null)}{((i >> OP2_START) > 0 ? $">{i >> OP2_START}" : null)}",
+            Instr.SubL => $"{(((i >> INSTR_BITS) & OP_MASK) > 0 ? $"-{(i >> INSTR_BITS) & OP_MASK}" : null)}{((i >> OP2_START) > 0 ? $"<{i >> OP2_START}" : null)}",
+            Instr.SubR => $"{(((i >> INSTR_BITS) & OP_MASK) > 0 ? $"-{(i >> INSTR_BITS) & OP_MASK}" : null)}{((i >> OP2_START) > 0 ? $">{i >> OP2_START}" : null)}",
+            Instr.AddMultL => $"<{i >> OP2_START}+{(i >> INSTR_BITS) & OP_MASK}×",
+            Instr.AddMultR => $">{i >> OP2_START}+{(i >> INSTR_BITS) & OP_MASK}×",
+            Instr.SubMultL => $"<{i >> OP2_START}-{(i >> INSTR_BITS) & OP_MASK}×",
+            Instr.SubMultR => $">{i >> OP2_START}-{(i >> INSTR_BITS) & OP_MASK}×",
             Instr.SetZero => "0",
             Instr.Input => ",",
             Instr.Output => ".",
-            Instr.Jz => $"{ix}[{i >> 4}",
-            Instr.Jnz => $"{ix}]{i >> 4}",
+            //Instr.Jz => $"{ix}[{i >> INSTR_BITS}",
+            //Instr.Jnz => $"{ix}]{i >> INSTR_BITS}",
+            Instr.Jz => "[",
+            Instr.Jnz => "]",
+            Instr.FindL => $"<{i >> INSTR_BITS}f",
+            Instr.FindR => $">{i >> INSTR_BITS}f",
             _ => "?",
         }));
     }
