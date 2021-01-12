@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -175,9 +175,9 @@ namespace BfFastRoman
             var compiled = compile(optimized);
             compiled.Add(i_end);
 
+#if DEBUG
             //var allInstrs = recurse(optimized).ToList();
             //var positions = allInstrs.OrderBy(i => i.CompiledPos).Select(i => i.CompiledPos).ToList();
-
             var hotInstructions = new[] { 1211, 1213, 1214, 1315, 1317, 1318, 1324, 1326, 1332, 1333, 1335, 1337, 1338, 1555, 1557, 1558, 1564, 1566, 1572, 1573, 1575, 1577, 1578, 1727, 1729, 1730, 2606, 2608, 2609, 2710, 2712, 2713, 2719, 2721, 2727, 2728, 2730, 2732, 2733, 2855, 2857, 2858, 4290, 4292, 4293, 4394, 4396, 4397, 4403, 4405, 4411, 4412, 4414, 4416, 4417, 4592, 4594, 4595, 4601, 4603, 4609, 4610, 4612, 4614, 4615, 4735, 4737, 4738 };
             hotInstructions = hotInstructions.Where(i => !(compiled[i] == i_bckJumpLong || compiled[i] == i_bckJumpShort || compiled[i] == i_nop)).ToArray();
             int hotcount = 0;
@@ -190,6 +190,7 @@ namespace BfFastRoman
             foreach (var instr in optimized)
                 ConsoleUtil.Write(instr.ToColoredString());
             Console.WriteLine();
+#endif
 
             unsafe
             {
@@ -469,12 +470,21 @@ namespace BfFastRoman
             var tapeLen = 30_000;
             sbyte* tape = stackalloc sbyte[tapeLen];
             var tapeStart = tape;
-            var tapeEnd = tape + tapeLen;
+            var tapeEnd = tape + tapeLen; // todo: wrap around
             tape += tapeLen / 2;
 #if DEBUG
             var progStart = program;
             var progEnd = program + progLen;
 #endif
+            var outpt = new List<byte>();
+            void flushOutput()
+            {
+                Console.WriteLine($"Hm?! {Ut.Toc()}");
+                output.Write(outpt.ToArray());
+                Console.WriteLine();
+                Console.WriteLine($"Hm?!?! {Ut.Toc()}");
+                outpt.Clear();
+            }
 
             while (true)
             {
@@ -514,10 +524,11 @@ namespace BfFastRoman
                 }
                 else if (a == i_output)
                 {
-                    output.WriteByte(*(byte*) tape);
+                    outpt.Add(*(byte*) tape);
                 }
                 else if (a == i_input)
                 {
+                    flushOutput();
                     throw new NotImplementedException();
                 }
 
@@ -547,7 +558,10 @@ namespace BfFastRoman
                 else if (a == i_nop)
                 { }
                 else if (a == i_end)
+                {
+                    flushOutput();
                     return;
+                }
 
                 else
                     throw new Exception();
