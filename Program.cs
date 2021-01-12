@@ -322,27 +322,32 @@ namespace BrainFJit
             return output.ToArray().FromUtf8();
         }
 
-        private static string stringifyCode(List<int> code) => string.Join(" ", code.Select((i, ix) => ((Instr) (i & INSTR_MASK)) switch
+        private static string stringifyCode(List<int> code) => string.Join(" ", code.Select(i =>
         {
-            Instr.Noop => $"/",
-            Instr.AddL => $"{(((i >> INSTR_BITS) & OP_MASK) > 0 ? $"+{(i >> INSTR_BITS) & OP_MASK}" : null)}{((i >> OP2_START) > 0 ? $"<{i >> OP2_START}" : null)}",
-            Instr.AddR => $"{(((i >> INSTR_BITS) & OP_MASK) > 0 ? $"+{(i >> INSTR_BITS) & OP_MASK}" : null)}{((i >> OP2_START) > 0 ? $">{i >> OP2_START}" : null)}",
-            Instr.SubL => $"{(((i >> INSTR_BITS) & OP_MASK) > 0 ? $"-{(i >> INSTR_BITS) & OP_MASK}" : null)}{((i >> OP2_START) > 0 ? $"<{i >> OP2_START}" : null)}",
-            Instr.SubR => $"{(((i >> INSTR_BITS) & OP_MASK) > 0 ? $"-{(i >> INSTR_BITS) & OP_MASK}" : null)}{((i >> OP2_START) > 0 ? $">{i >> OP2_START}" : null)}",
-            Instr.AddMultL => $"<{i >> OP2_START}+{(i >> INSTR_BITS) & OP_MASK}×",
-            Instr.AddMultR => $">{i >> OP2_START}+{(i >> INSTR_BITS) & OP_MASK}×",
-            Instr.SubMultL => $"<{i >> OP2_START}-{(i >> INSTR_BITS) & OP_MASK}×",
-            Instr.SubMultR => $">{i >> OP2_START}-{(i >> INSTR_BITS) & OP_MASK}×",
-            Instr.SetZero => "0",
-            Instr.Input => ",",
-            Instr.Output => ".",
-            //Instr.Jz => $"{ix}[{i >> INSTR_BITS}",
-            //Instr.Jnz => $"{ix}]{i >> INSTR_BITS}",
-            Instr.Jz => "[",
-            Instr.Jnz => "]",
-            Instr.FindL => $"<{i >> INSTR_BITS}f",
-            Instr.FindR => $">{i >> INSTR_BITS}f",
-            _ => "?",
+            var op1 = (i >> INSTR_BITS) & OP_MASK;
+            var op2 = i >> OP2_START;
+            return ((Instr) (i & INSTR_MASK)) switch
+            {
+                Instr.AddL => $"{(op1 > 0 ? $"+{op1}" : null)}{(op2 > 0 ? $"<{op2}" : null)}",
+                Instr.AddR => $"{(op1 > 0 ? $"+{op1}" : null)}{(op2 > 0 ? $">{op2}" : null)}",
+                Instr.SubL => $"{(op1 > 0 ? $"-{op1}" : null)}{(op2 > 0 ? $"<{op2}" : null)}",
+                Instr.SubR => $"{(op1 > 0 ? $"-{op1}" : null)}{(op2 > 0 ? $">{op2}" : null)}",
+                Instr.AddMultL => $"<{op2}+{op1}×",
+                Instr.AddMultR => $">{op2}+{op1}×",
+                Instr.SubMultL => $"<{op2}-{op1}×",
+                Instr.SubMultR => $">{op2}-{op1}×",
+                Instr.SetZero => "0",
+                Instr.Input => ",",
+                Instr.Output => ".",
+                //Instr.Jz => $"{ix}[{i >> INSTR_BITS}",
+                //Instr.Jnz => $"{ix}]{i >> INSTR_BITS}",
+                Instr.Jz => "[",
+                Instr.Jnz => "]",
+                Instr.FindL => $"<{op1}f",
+                Instr.FindR => $">{op1}f",
+                Instr.ArrSum => $"A({op1},{op2})",
+                _ => "?",
+            };
         }));
     }
 }
