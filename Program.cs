@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -525,22 +525,29 @@ namespace BfFastRoman
                 sbyte a = *(program++);
                 if (a < i_first)
                 {
-                    *tape += a; // add
+                    * tape += a; // add
                     tape += *(program++); // move
                     continue;
                 }
                 // less common cases
-                if (a == i_fwdJumpShort)
-                {
-                    if (*tape == 0)
-                        program += *(byte*) program;
-                    else
-                        program++; // optimize: add unconditionally
-                }
-                else if (a == i_bckJumpShort)
+                if (a == i_bckJumpShort)
                 {
                     if (*tape != 0)
                         program -= *(byte*) program;
+                    else
+                        program++; // optimize: add unconditionally
+                }
+                else if (a == i_sum)
+                {
+                    sbyte dist = *(program++);
+                    sbyte val = *tape;
+                    *(tape + dist) += val;
+                    *tape = 0;
+                }
+                else if (a == i_fwdJumpShort)
+                {
+                    if (*tape == 0)
+                        program += *(byte*) program;
                     else
                         program++; // optimize: add unconditionally
                 }
@@ -559,28 +566,6 @@ namespace BfFastRoman
                         tape += move;
                     }
                 }
-                else if (a == i_sum)
-                {
-                    sbyte dist = *(program++);
-                    sbyte val = *tape;
-                    *(tape + dist) += val;
-                    *tape = 0;
-                }
-                else if (a == i_output)
-                {
-#if DEBUG
-                    output.WriteByte(*(byte*) tape);
-#else
-                    outpt.Add(*(byte*) tape);
-#endif
-                }
-                else if (a == i_input)
-                {
-                    flushOutput();
-                    throw new NotImplementedException();
-                }
-
-                // least common cases
                 else if (a == i_fwdJumpLong)
                 {
                     if (*tape == 0)
@@ -602,6 +587,19 @@ namespace BfFastRoman
                     }
                     else
                         program += 2; // optimize: add unconditionally
+                }
+                else if (a == i_output)
+                {
+#if DEBUG
+                    output.WriteByte(*(byte*) tape);
+#else
+                    outpt.Add(*(byte*) tape);
+#endif
+                }
+                else if (a == i_input)
+                {
+                    flushOutput();
+                    throw new NotImplementedException();
                 }
                 else if (a == i_nop)
                 { }
