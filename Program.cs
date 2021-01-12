@@ -84,6 +84,7 @@ namespace BrainFJit
             );
             Console.WriteLine();
             Console.WriteLine($"Took {(DateTime.UtcNow - start).TotalSeconds:0.00} sec.");
+            Console.WriteLine($"{IntPtr.Size * 8}-bit");
             Console.ReadLine();
         }
 
