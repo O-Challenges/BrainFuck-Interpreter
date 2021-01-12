@@ -247,6 +247,11 @@ namespace BfFastRoman
                     result.Add(i_moveZero);
                     result.Add(checked((sbyte) mz.Move));
                 }
+                else if (instr is SumInstr sm)
+                {
+                    result.Add(i_sum);
+                    result.Add(checked((sbyte) sm.Dist));
+                }
                 else if (instr is LoopInstr lp)
                 {
                     var body = compile(lp.Instrs);
@@ -383,6 +388,9 @@ namespace BfFastRoman
                         result[i] = new AddMoveLoopedInstr { Add = am2.Add, Move = am2.Move };
                     else
                         lp.Instrs = optimize(lp.Instrs);
+
+                    if (lp.Instrs.Count == 2 && lp.Instrs[0] is AddMoveInstr add1 && lp.Instrs[1] is AddMoveInstr add2 && add1.Add == -1 && add2.Add == 1 && add1.Move == -add2.Move)
+                        result[i] = new SumInstr { Dist = add1.Move };
                 }
             }
             // Merge move-zeroes
@@ -416,6 +424,12 @@ namespace BfFastRoman
             public int Add, Move;
             public override string ToString() => "[" + (Add > 0 ? new string('+', Add) : new string('-', -Add)) + (Move > 0 ? new string('>', Move) : new string('<', -Move)) + "]";
             public override ConsoleColoredString ToColoredString() => $"[LpA{Add}/M{Move}]".Color(HeatColor);
+        }
+        private class SumInstr : Instr
+        {
+            public int Dist;
+            public override string ToString() => "[-" + (Dist > 0 ? new string('>', Dist) : new string('<', -Dist)) + "+" + (Dist > 0 ? new string('<', Dist) : new string('>', -Dist)) + "]";
+            public override ConsoleColoredString ToColoredString() => $"[Sum{Dist}]".Color(HeatColor);
         }
         private class LoopInstr : Instr
         {
@@ -474,6 +488,7 @@ namespace BfFastRoman
         private const sbyte i_input = 106;
         private const sbyte i_moveZero = 107;
         private const sbyte i_addMoveLooped = 108;
+        private const sbyte i_sum = 109;
         private const sbyte i_nop = 111;
         private const sbyte i_end = 122;
 
@@ -543,6 +558,13 @@ namespace BfFastRoman
                         *tape += add;
                         tape += move;
                     }
+                }
+                else if (a == i_sum)
+                {
+                    sbyte dist = *(program++);
+                    sbyte val = *tape;
+                    *(tape + dist) += val;
+                    *tape = 0;
                 }
                 else if (a == i_output)
                 {
