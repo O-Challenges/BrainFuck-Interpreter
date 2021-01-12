@@ -2,7 +2,7 @@
 # Visual Studio Version 16
 VisualStudioVersion = 16.0.29806.167
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{C372F812-2364-49C1-AF0F-3217F8E8E1D2}") = "BrainFJit", "BrainFJit.csproj", "{D6BE34AA-8B88-499C-BD44-81F5EA39F19B}"
+Project("{C372F812-2364-49C1-AF0F-3217F8E8E1D2}") = "BrainFJit", "Src\BrainFJit.csproj", "{D6BE34AA-8B88-499C-BD44-81F5EA39F19B}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

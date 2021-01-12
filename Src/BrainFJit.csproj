@@ -12,9 +12,9 @@
     <FileAlignment>512</FileAlignment>
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
     <Deterministic>true</Deterministic>
-    <OutputPath>..\builds\$(Configuration)\</OutputPath>
-    <IntermediateOutputPath>..\builds\$(Configuration)\obj-$(AssemblyName)\</IntermediateOutputPath>
-    <BaseIntermediateOutputPath>..\builds\$(Configuration)\obj-$(AssemblyName)\</BaseIntermediateOutputPath>
+    <OutputPath>..\Builds\$(Configuration)\</OutputPath>
+    <IntermediateOutputPath>..\Builds\$(Configuration)\obj-$(AssemblyName)\</IntermediateOutputPath>
+    <BaseIntermediateOutputPath>..\Builds\$(Configuration)\obj-$(AssemblyName)\</BaseIntermediateOutputPath>
     <LangVersion>latest</LangVersion>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">

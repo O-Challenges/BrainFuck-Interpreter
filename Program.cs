@@ -345,7 +345,6 @@ namespace BrainFJit
                 Instr.Jnz => "]",
                 Instr.FindL => $"<{op1}f",
                 Instr.FindR => $">{op1}f",
-                Instr.ArrSum => $"A({op1},{op2})",
                 _ => "?",
             };
         }));
