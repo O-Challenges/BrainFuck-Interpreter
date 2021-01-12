@@ -97,7 +97,6 @@ namespace BrainFJit
 
         enum Instr
         {
-            Noop,
             AddL,
             AddR,       // NOTE: Jitter assumes that AddL+1 = AddR
             SubL,
@@ -112,7 +111,8 @@ namespace BrainFJit
             Jz,
             Jnz,
             FindL,
-            FindR
+            FindR,
+            ArrSum
         }
 
         public unsafe static string InterpretBrainfuck(string bf, TextReader input)
@@ -241,6 +241,33 @@ namespace BrainFJit
                         }
                         jump2:
 
+
+                        // OPTIMIZATION: [ >1 >9+1× 0 <10 ] ⇒ ArrSum(1,9)
+                        var instr1 = code[0];
+                        var instr1c = (Instr) (instr1 & INSTR_MASK);
+                        if (instr1c != Instr.AddR && instr1c != Instr.SubR)
+                            goto jump3;
+                        if (((instr1 >> INSTR_BITS) & OP_MASK) != 0)
+                            goto jump3;
+                        var instr2 = code[1];
+                        if ((Instr) (instr2 & INSTR_MASK) != Instr.AddMultR)
+                            goto jump3;
+                        if ((Instr) (code[2] & INSTR_MASK) != Instr.SetZero)
+                            goto jump3;
+                        var instr4 = code[3];
+                        var instr4c = (Instr) (instr4 & INSTR_MASK);
+                        if (instr4c != Instr.AddL && instr4c != Instr.SubL)
+                            goto jump3;
+                        var op1 = (instr1 >> OP2_START) & OP_MASK;
+                        var op2 = (instr2 >> OP2_START) & OP_MASK;
+                        if (((instr4 >> INSTR_BITS) & OP_MASK) != 0 || ((instr4 >> OP2_START) & OP_MASK) != (op1 + op2))
+                            goto jump3;
+                        outerCode.Add((int) Instr.ArrSum | (op1 << INSTR_BITS) | (op2 << OP2_START));
+                        goto done;
+
+                        jump3:
+
+
                         // No optimization triggered
                         outerCode.Add((int) Instr.Jz | ((offset + code.Count + 1) << 4));
                         outerCode.AddRange(code);
@@ -294,6 +321,18 @@ namespace BrainFJit
                         case Instr.Jz: if (*ptr == 0) codePtr = startInstrPtr + (instr >> INSTR_BITS); break;
                         case Instr.Jnz: if (*ptr != 0) codePtr = startInstrPtr + (instr >> INSTR_BITS); break;
 
+                        case Instr.ArrSum:
+                            op = (instr >> INSTR_BITS) & OP_MASK;
+                            var op2 = (instr >> OP2_START) & OP_MASK;
+                            while (*ptr != 0)
+                            {
+                                ptr += op;
+                                *(ptr + op2) = *ptr;
+                                *ptr = 0;
+                                ptr -= op + op2;
+                            }
+                            break;
+
                         case Instr.Input:
                             int ch;
                             while ((ch = input.Read()) == 13) ;     // intentionally ignore '\r'
@@ -346,6 +385,7 @@ namespace BrainFJit
                 Instr.Jnz => "]",
                 Instr.FindL => $"<{op1}f",
                 Instr.FindR => $">{op1}f",
+                Instr.ArrSum => $"A({op1},{op2})",
                 _ => "?",
             };
         }));
