@@ -9,7 +9,7 @@
   "scripts": {
     "build": "tsc",
     "watch": "tsc --watch",
-    "test": "npm run build && node build/main.js tests/helloworld.bf"
+    "test": "cat \"tests/life.bf\" | node build/main.js"
   },
   "repository": {
     "type": "git",
