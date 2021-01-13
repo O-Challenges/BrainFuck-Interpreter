@@ -13,19 +13,19 @@ The following languages are going to be included with their respective author:
 | Language   	| Author           	|
 |------------	|------------------	|
 | Assembly   	| @FearlessDoggo21 	|
+| C++          | @benkyd            |
 | C++        	| @SomeGithub01    	|
 | C++        	| @EntireTwix      	|
-| C++          | @Riku32            |
-| C++          | @benkyd            |
 | C#         	| @caesay          	|
 | C#         	| @Nekiwo          	|
 | C#           | @rstarkov          |
-| Golang     	| @Oli-Ar          	|
 | Java         | @clubPenguin420    |
 | Java       	| @GameLawl        	|
+| Golang     	| @Oli-Ar          	|
 | JavaScript   | @Rodziac           |
 | Python       | @Fark1             |
 | Rust         | @HamishWHC         |
+| Rust         | @Riku32            |
 | Typescript 	| @Zaedus          	|
 | Verilog    	| @UDXS            	|
 
