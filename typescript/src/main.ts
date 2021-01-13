@@ -12,7 +12,6 @@
 import { stdout, stdin } from "process";
 
 stdin.on("data", (buf) => {
-    console.log(buf)
     let cursor = 0;
     let posCells = new Uint8Array(15000); // >= 0
     let negCells = new Uint8Array(15000); // < 0
@@ -37,14 +36,24 @@ stdin.on("data", (buf) => {
                 ? stdout.write(String.fromCharCode(posCells[cursor]))
                 : stdout.write(String.fromCharCode(negCells[-cursor]));
         }
-        else if(selected == 91) {
-            stack.push(instructionIndex);
-        }
-        else if(selected == 93) {
+        else if(selected == 91) { // [
             let current = cursor >= 0 
                 ? posCells[cursor]
                 :negCells[-cursor];
-            (current) == 0 
+            if(current == 0) {
+                while(selected != 93) {
+                    instructionIndex++;
+                    selected = buf[instructionIndex];
+                }
+                stack.pop();
+            }
+            stack.push(instructionIndex);
+            
+        }
+        else if(selected == 93) { // ]
+            (cursor >= 0 
+                ? posCells[cursor]
+                :negCells[-cursor]) == 0 
                     ? stack.pop()
                     : instructionIndex = stack[stack.length - 1];
         }
