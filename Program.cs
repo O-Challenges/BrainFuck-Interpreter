@@ -158,7 +158,8 @@ namespace BfFastRoman
 -<<[-<<<<<<+>>>>>>]<<<<<<[->>>>>>+<<<<<<<<<<<<<<<[<<<<<<<<<]>>>[-]+>>>>>>[>>>>>>
 >>>]>[-]+<]]+>[-<[>>>>>>>>>]<<<<<<<<]>>>>>>>>]<<<<<<<<<[<<<<<<<<<]>>>>[-]<<<++++
 +[-[->>>>>>>>>+<<<<<<<<<]>>>>>>>>>]>>>>>->>>>>>>>>>>>>>>>>>>>>>>>>>>-<<<<<<[<<<<
-<<<<<]]>>>]".Replace("\r\n", "").Replace("[<->-<<<<<<+>>>>>>]", "[-<-<<<<<+>>>>>>]").Replace("[<->-<<<<<<<+>>>>>>>]", "[-<-<<<<<<+>>>>>>>]");
+<<<<<]]>>>]";
+            rawcode = rawcode.Replace("\r\n", "");
             rawcode = Regex.Replace(rawcode, @"\[<->-(<+)\+(>+)\]", m => m.Groups[1].Length == m.Groups[2].Length ? $"[-<-{new string('<', m.Groups[1].Length - 1)}+{new string('>', m.Groups[1].Length)}]" : m.Value);
             //rawcode = "++++++++[>++++[>++>+++>+++>+<<<<-]>+>+>->>+[<]<-]>>.>---.+++++++..+++.>>.<-.<.+++.------.--------.>>+.>++.";
 
@@ -238,7 +239,7 @@ namespace BfFastRoman
                 if (instr is AddMoveInstr am)
                 {
                     if (am.Add < sbyte.MinValue || am.Add >= i_first)
-                        throw new NotImplementedException();
+                        throw new Exception();
                     result.Add((sbyte) am.Add);
                     result.Add(checked((sbyte) am.Move));
                 }
@@ -335,7 +336,7 @@ namespace BfFastRoman
                 if (p[pos] == '>' || p[pos] == '<')
                 {
                     int moves = 0;
-                    while (pos < p.Length && (p[pos] == '>' || p[pos] == '<'))
+                    while (pos < p.Length && (p[pos] == '>' || p[pos] == '<') && sbyteFit(moves))
                     {
                         moves += p[pos] == '>' ? 1 : -1;
                         pos++;
@@ -345,7 +346,7 @@ namespace BfFastRoman
                 else if (p[pos] == '+' || p[pos] == '-')
                 {
                     int adds = 0;
-                    while (pos < p.Length && (p[pos] == '+' || p[pos] == '-'))
+                    while (pos < p.Length && (p[pos] == '+' || p[pos] == '-') && addsFit(adds))
                     {
                         adds += p[pos] == '+' ? 1 : -1;
                         pos++;
@@ -434,16 +435,19 @@ namespace BfFastRoman
                                 res.Add((dist: ptrOffset - res.Sum(r => r.dist), mult: ins.Add));
                             ptrOffset += ins.Move;
                         }
-                        if (ptrOffset == 0 && intOffset == -1)
+                        if (ptrOffset == 0 && intOffset == -1 && res.All(r => sbyteFit(r.mult) && sbyteFit(r.dist)) && sbyteFit(res.Sum(r => r.dist)))
                             result[i] = new AddMultInstr { Ops = res.ToArray() };
                     }
                 }
             }
             // Merge move-zeroes
-            result = mergeNeighbours<AddMoveInstr, MoveZeroInstr>(result, (am, mz) => am.Add == 0, (am, mz) => new MoveZeroInstr { Move = am.Move + mz.Move });
+            result = mergeNeighbours<AddMoveInstr, MoveZeroInstr>(result, (am, mz) => am.Add == 0 && sbyteFit(am.Move + mz.Move), (am, mz) => new MoveZeroInstr { Move = am.Move + mz.Move });
 
             return result;
         }
+
+        private static bool addsFit(int adds) => adds > sbyte.MinValue && adds < i_first - 1;
+        private static bool sbyteFit(int moves) => moves > sbyte.MinValue && moves < sbyte.MaxValue;
 
         private abstract class Instr
         {
