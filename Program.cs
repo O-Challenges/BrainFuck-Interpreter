@@ -158,7 +158,8 @@ namespace BfFastRoman
 -<<[-<<<<<<+>>>>>>]<<<<<<[->>>>>>+<<<<<<<<<<<<<<<[<<<<<<<<<]>>>[-]+>>>>>>[>>>>>>
 >>>]>[-]+<]]+>[-<[>>>>>>>>>]<<<<<<<<]>>>>>>>>]<<<<<<<<<[<<<<<<<<<]>>>>[-]<<<++++
 +[-[->>>>>>>>>+<<<<<<<<<]>>>>>>>>>]>>>>>->>>>>>>>>>>>>>>>>>>>>>>>>>>-<<<<<<[<<<<
-<<<<<]]>>>]";
+<<<<<]]>>>]".Replace("\r\n", "").Replace("[<->-<<<<<<+>>>>>>]", "[-<-<<<<<+>>>>>>]").Replace("[<->-<<<<<<<+>>>>>>>]", "[-<-<<<<<<+>>>>>>>]");
+            rawcode = Regex.Replace(rawcode, @"\[<->-(<+)\+(>+)\]", m => m.Groups[1].Length == m.Groups[2].Length ? $"[-<-{new string('<', m.Groups[1].Length - 1)}+{new string('>', m.Groups[1].Length)}]" : m.Value);
             //rawcode = "++++++++[>++++[>++>+++>+++>+<<<<-]>+>+>->>+[<]<-]>>.>---.+++++++..+++.>>.<-.<.+++.------.--------.>>+.>++.";
 
             var p = new string(rawcode.Where(c => c == '[' || c == ']' || c == '>' || c == '<' || c == '+' || c == '-' || c == '.' || c == ',').ToArray());
@@ -171,7 +172,12 @@ namespace BfFastRoman
             var optimized = optimize(parsed);
             serialized = string.Join("", optimized.Select(p => p.ToString()));
             if (p != serialized)
+            {
+                int errorPos = 0;
+                while (p[errorPos] == serialized[errorPos++])
+                    ;
                 throw new Exception();
+            }
             var compiled = compile(optimized);
             compiled.Add(i_end);
 
