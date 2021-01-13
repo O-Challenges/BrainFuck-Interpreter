@@ -264,6 +264,18 @@ namespace BfFastRoman
                     result.Add(checked((sbyte) sma.Step));
                     result.Add(checked((sbyte) sma.Width));
                 }
+                else if (instr is AddMultInstr amul)
+                {
+                    result.Add(i_addMult);
+                    result.Add(checked((sbyte) amul.Ops.Length));
+                    var total = 0;
+                    foreach (var op in amul.Ops)
+                    {
+                        total += op.dist;
+                        result.Add(checked((sbyte) total));
+                        result.Add(checked((sbyte) op.mult));
+                    }
+                }
                 else if (instr is FindZeroInstr fz)
                 {
                     result.Add(i_findZero);
@@ -409,6 +421,22 @@ namespace BfFastRoman
                         result[i] = new SumInstr { Dist = add1.Move };
                     else if (lp.Instrs.Count == 3 && lp.Instrs[0] is AddMoveInstr sam1 && sam1.Add == 0 && lp.Instrs[1] is SumInstr si && lp.Instrs[2] is AddMoveInstr sam2 && sam2.Add == 0 && sam1.Move + si.Dist == -sam2.Move)
                         result[i] = new SumArrInstr { Step = sam1.Move, Width = si.Dist };
+                    else if (lp.Instrs.All(i => i is AddMoveInstr))
+                    {
+                        int ptrOffset = 0;
+                        int intOffset = 0;
+                        var res = new List<(int dist, int mult)>();
+                        foreach (var ins in lp.Instrs.Cast<AddMoveInstr>())
+                        {
+                            if (ptrOffset == 0)
+                                intOffset += ins.Add;
+                            else if (ins.Add != 0)
+                                res.Add((dist: ptrOffset - res.Sum(r => r.dist), mult: ins.Add));
+                            ptrOffset += ins.Move;
+                        }
+                        if (ptrOffset == 0 && intOffset == -1)
+                            result[i] = new AddMultInstr { Ops = res.ToArray() };
+                    }
                 }
             }
             // Merge move-zeroes
@@ -455,6 +483,12 @@ namespace BfFastRoman
             public int Dist;
             public override string ToString() => "[-" + Ω(Dist, '>', '<') + "+" + (Dist > 0 ? new string('<', Dist) : new string('>', -Dist)) + "]";
             public override ConsoleColoredString ToColoredString() => $"[Sum{Dist}]".Color(HeatColor);
+        }
+        private class AddMultInstr : Instr
+        {
+            public (int dist, int mult)[] Ops;  // 2, 1, 3
+            public override string ToString() => "[-" + Ops.Select(t => Ω(t.dist, '>', '<') + Ω(t.mult, '+', '-')).JoinString() + Ω(-Ops.Sum(x => x.dist), '>', '<') + "]";
+            public override ConsoleColoredString ToColoredString() => $"[AddMul{Ops.Length}]".Color(HeatColor);
         }
         private class SumArrInstr : Instr
         {
@@ -527,6 +561,7 @@ namespace BfFastRoman
         private const sbyte i_findZero = 110;
         private const sbyte i_nop = 111;
         private const sbyte i_sumArr = 112;
+        private const sbyte i_addMult = 113;
         private const sbyte i_end = 122;
 
         private unsafe static void Execute(sbyte* program, Stream input, Stream output, int progLen)
@@ -642,6 +677,19 @@ namespace BfFastRoman
                         }
                         break;
 
+                    case i_addMult:
+                        {
+                            sbyte num = *(program++);
+                            while (num-- > 0)
+                            {
+                                sbyte dist = *(program++);
+                                sbyte mult = *(program++);
+                                *(tape + dist) += (sbyte) (mult * *tape);
+                            }
+                            *tape = 0;
+                        }
+                        break;
+
                     case i_input:
                         flushOutput();
                         throw new NotImplementedException();
@@ -662,6 +710,10 @@ namespace BfFastRoman
                         return;
 
                     default:
+#if DEBUG
+                        if (a >= i_first)
+                            throw new Exception();
+#endif
                         *tape += a; // add
                         tape += *(program++); // move
                         break;
