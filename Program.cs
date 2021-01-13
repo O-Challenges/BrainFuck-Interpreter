@@ -269,7 +269,7 @@ namespace BfFastRoman
                     if (body.Count < 255)
                     {
                         result.Add(i_fwdJumpShort);
-                        result.Add((sbyte) checked((byte) (body.Count - 1)));
+                        result.Add((sbyte) checked((byte) (body.Count - 0)));
                         foreach (var sub in recurse(lp.Instrs))
                             sub.CompiledPos += result.Count;
                         result.AddRange(body);
@@ -279,7 +279,7 @@ namespace BfFastRoman
                     else
                     {
                         result.Add(i_fwdJumpLong);
-                        addUshort(body.Count - 2);
+                        addUshort(body.Count - 1);
                         foreach (var sub in recurse(lp.Instrs))
                             sub.CompiledPos += result.Count;
                         result.AddRange(body);
@@ -294,7 +294,6 @@ namespace BfFastRoman
                 else
                     throw new Exception();
             }
-            result.Add(i_nop); // ugh... this was added for debugging and it fixed mandelbrot. Optimize it away!
             return result;
         }
 
