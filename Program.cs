@@ -140,8 +140,8 @@ namespace BfFastRoman
                         result[i] = new AddMoveLoopedInstr { Add = am2.Add, Move = am2.Move };
                     else if (lp.Instrs.Count == 2 && lp.Instrs[0] is AddMoveInstr add1 && lp.Instrs[1] is AddMoveInstr add2 && add1.Add == -1 && add2.Add == 1 && add1.Move == -add2.Move)
                         result[i] = new SumInstr { Dist = add1.Move };
-                    else if (lp.Instrs.Count == 3 && lp.Instrs[0] is AddMoveInstr sam1 && sam1.Add == 0 && lp.Instrs[1] is SumInstr si && lp.Instrs[2] is AddMoveInstr sam2 && sam2.Add == 0 && sam1.Move + si.Dist == -sam2.Move)
-                        result[i] = new SumArrInstr { Step = sam1.Move, Width = si.Dist };
+                    else if (lp.Instrs.Count == 3 && lp.Instrs[0] is AddMoveInstr sam1 && sam1.Add == 0 && lp.Instrs[1] is SumInstr si && lp.Instrs[2] is AddMoveInstr sam2 && sam2.Add == 0)
+                        result[i] = new SumArrInstr { Move1 = sam1.Move, Dist = si.Dist, Move2 = sam2.Move };
                     else if (lp.Instrs.All(i => i is AddMoveInstr))
                     {
                         int ptrOffset = 0;
@@ -269,10 +269,10 @@ namespace BfFastRoman
         }
         private class SumArrInstr : Instr
         {
-            public int Step, Width;
+            public int Move1, Dist, Move2;
 #if DEBUG
-            public override string ToString() => "[" + Ω(Step, '>', '<') + "[-" + Ω(Width, '>', '<') + "+" + Ω(Width, '<', '>') + "]" + Ω(Step + Width, '<', '>') + "]";
-            public override ConsoleColoredString ToColoredString(int depth) => $"{{SumArr{Step},{Width}}}".Color(HeatColor);
+            public override string ToString() => "[" + Ω(Move1, '>', '<') + "[-" + Ω(Dist, '>', '<') + "+" + Ω(Dist, '<', '>') + "]" + Ω(Move2, '>', '<') + "]";
+            public override ConsoleColoredString ToColoredString(int depth) => $"[M{Move1}Sum{Dist}M{Move2}]".Color(HeatColor);
 #endif
         }
         private class LoopInstr : Instr
@@ -349,8 +349,9 @@ namespace BfFastRoman
                 else if (instr is SumArrInstr sma)
                 {
                     result.Add(i_sumArr);
-                    result.Add(checked((sbyte) sma.Step));
-                    result.Add(checked((sbyte) sma.Width));
+                    result.Add(checked((sbyte) sma.Move1));
+                    result.Add(checked((sbyte) sma.Dist));
+                    result.Add(checked((sbyte) sma.Move2));
                 }
                 else if (instr is AddMultInstr amul)
                 {
@@ -512,14 +513,15 @@ namespace BfFastRoman
 
                     case i_sumArr:
                         {
-                            sbyte step = *(program++);
-                            sbyte width = *(program++);
+                            sbyte move1 = *(program++);
+                            sbyte dist = *(program++);
+                            sbyte move2 = *(program++);
                             while (*tape != 0)
                             {
-                                tape += step;
-                                *(tape + width) += *tape;
+                                tape += move1;
+                                *(tape + dist) += *tape;
                                 *tape = 0;
-                                tape -= step + width;
+                                tape += move2;
                             }
                         }
                         break;
