@@ -206,22 +206,6 @@ namespace BfFastRoman
                     Console.WriteLine($"Execute: {Ut.Toc():0.0}s");
                 }
             }
-
-            var code = p;
-            code = Regex.Replace(code, @"[><]*\[\-\]", "o");
-
-            code = Regex.Replace(code, "[+-]+", "A");
-            code = Regex.Replace(code, "[><]+", "M");
-
-            code = code.Replace("AM", "x").Replace("A", "x").Replace("M", "x");
-            code = code.Replace("[x]", "A");
-            code = code.Replace("[xx]", "B");
-            code = code.Replace("[xxx]", "C");
-            code = code.Replace("[xxxx]", "D");
-            getcounts(code);
-            getloops(code);
-            code = Regex.Replace(code, @"x?\[x?Ax?\]x?", "E");
-            code = Regex.Replace(code, @"x?\[x?Bx?\]x?", "F");
         }
 
         private static List<sbyte> compile(List<Instr> prog)
@@ -514,40 +498,6 @@ namespace BfFastRoman
             public int Move;
             public override string ToString() => Ω(Move, '>', '<') + "[-]";
             public override ConsoleColoredString ToColoredString() => $"Z{Move}".Color(HeatColor);
-        }
-
-        private static void getloops(string pp)
-        {
-            var loops1 = Regex.Matches(pp, @"\[[^[\]]+\]").Cast<Match>().Select(m => m.Value).ToLookup(x => x).Select(g => new { g.Key, Count = g.Count() }).OrderByDescending(x => x.Count).ToList();
-            var loops2 = Regex.Matches(pp, @"\[[^[\]]+\]\w").Cast<Match>().Select(m => m.Value).ToLookup(x => x).Select(g => new { g.Key, Count = g.Count() }).OrderByDescending(x => x.Count).ToList();
-            var loops3 = Regex.Matches(pp, @"\w\[[^[\]]+\]").Cast<Match>().Select(m => m.Value).ToLookup(x => x).Select(g => new { g.Key, Count = g.Count() }).OrderByDescending(x => x.Count).ToList();
-            var loops4 = Regex.Matches(pp, @"x?\[[^[\]]+\]x?").Cast<Match>().Select(m => m.Value.Replace("x", "")).ToLookup(x => x).Select(g => new { g.Key, Count = g.Count() }).OrderByDescending(x => x.Count).ToList();
-        }
-
-        private static void getcounts(string pp)
-        {
-            // most common double-letter -> new letter
-            // [letter] -> new letter
-            var counts = new Dictionary<string, int>();
-            for (int i = 0; i < pp.Length; i++)
-            {
-                //var m1 = new Regex(@"\w\w").Match(pp, i);
-                //if (m1.Success)
-                //    counts.IncSafe(m1.Value);
-                //var m2 = new Regex(@"\[\w\]").Match(pp, i);
-                //if (m2.Success)
-                //    counts.IncSafe(m2.Value);
-                var s2 = pp.SubstringSafe(i, 2);
-                if (s2.Length == 2 && char.IsLetter(s2[0]) && char.IsLetter(s2[1]))
-                    counts.IncSafe(s2);
-                var s3 = pp.SubstringSafe(i, 3);
-                if (s3.Length == 3 && s3[0] == '[' && char.IsLetter(s3[1]) && s3[2] == ']')
-                    counts.IncSafe(s3);
-                var s4 = pp.SubstringSafe(i, 4);
-                if (s4.Length == 4 && s4[0] == '[' && char.IsLetter(s4[1]) && char.IsLetter(s4[2]) && s4[3] == ']')
-                    counts.IncSafe(s4);
-            }
-            var cc = counts.OrderByDescending(kvp => kvp.Value).ToList();
         }
 
         private static uint[] heatmap = new uint[10000];
