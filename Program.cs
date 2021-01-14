@@ -50,7 +50,7 @@ namespace BfFastRoman
             }
             catch { }
             foreach (var instr in optimized)
-                ConsoleUtil.Write(instr.ToColoredString());
+                ConsoleUtil.Write(instr.ToColoredString(0));
             Console.WriteLine();
 #endif
 
@@ -211,7 +211,7 @@ namespace BfFastRoman
 #if DEBUG
             public int CompiledPos; public double Heat;
             protected ConsoleColor HeatColor => Heat == 0 ? ConsoleColor.Gray : Heat < 0.1 ? ConsoleColor.White : Heat < 0.5 ? ConsoleColor.Cyan : ConsoleColor.Magenta;
-            public virtual ConsoleColoredString ToColoredString() => ToString().Color(HeatColor);
+            public virtual ConsoleColoredString ToColoredString(int depth) => ToString().Color(HeatColor);
             protected static string Ω(int amount, char pos, char neg) => new string(amount > 0 ? pos : neg, Math.Abs(amount));
 #endif
         }
@@ -232,7 +232,7 @@ namespace BfFastRoman
             public int Add, Move;
 #if DEBUG
             public override string ToString() => Ω(Add, '+', '-') + Ω(Move, '>', '<');
-            public override ConsoleColoredString ToColoredString() => $"A{Add}M{Move}".Color(HeatColor);
+            public override ConsoleColoredString ToColoredString(int depth) => $"A{Add}M{Move}".Color(HeatColor);
 #endif
         }
         private class AddMoveLoopedInstr : Instr
@@ -240,7 +240,7 @@ namespace BfFastRoman
             public int Add, Move;
 #if DEBUG
             public override string ToString() => "[" + Ω(Add, '+', '-') + Ω(Move, '>', '<') + "]";
-            public override ConsoleColoredString ToColoredString() => $"[LpA{Add}/M{Move}]".Color(HeatColor);
+            public override ConsoleColoredString ToColoredString(int depth) => $"{{A{Add}M{Move}}}".Color(HeatColor);
 #endif
         }
         private class FindZeroInstr : Instr
@@ -248,7 +248,7 @@ namespace BfFastRoman
             public int Dist;
 #if DEBUG
             public override string ToString() => "[" + Ω(Dist, '>', '<') + "]";
-            public override ConsoleColoredString ToColoredString() => $"(FindZ{Dist})".Color(HeatColor);
+            public override ConsoleColoredString ToColoredString(int depth) => $"{{FindZ{Dist}}}".Color(HeatColor);
 #endif
         }
         private class SumInstr : Instr
@@ -256,7 +256,7 @@ namespace BfFastRoman
             public int Dist;
 #if DEBUG
             public override string ToString() => "[-" + Ω(Dist, '>', '<') + "+" + (Dist > 0 ? new string('<', Dist) : new string('>', -Dist)) + "]";
-            public override ConsoleColoredString ToColoredString() => $"(Sum{Dist})".Color(HeatColor);
+            public override ConsoleColoredString ToColoredString(int depth) => $"(Sum{Dist})".Color(HeatColor);
 #endif
         }
         private class AddMultInstr : Instr
@@ -264,17 +264,15 @@ namespace BfFastRoman
             public (int dist, int mult)[] Ops;
 #if DEBUG
             public override string ToString() => "[-" + Ops.Select(t => Ω(t.dist, '>', '<') + Ω(t.mult, '+', '-')).JoinString() + Ω(-Ops.Sum(x => x.dist), '>', '<') + "]";
-            public override ConsoleColoredString ToColoredString() => $"(AddMul{Ops.Length})".Color(HeatColor);
+            public override ConsoleColoredString ToColoredString(int depth) => $"(AddMul{Ops.Length})".Color(HeatColor);
 #endif
         }
         private class SumArrInstr : Instr
         {
             public int Step, Width;
 #if DEBUG
-            public override string ToString() => "[" + (Step > 0 ? new string('>', Step) : new string('<', -Step))
-                + "[-" + (Width > 0 ? new string('>', Width) : new string('<', -Width)) + "+" + (Width > 0 ? new string('<', Width) : new string('>', -Width)) + "]"
-                + ((Step + Width) > 0 ? new string('<', Step + Width) : new string('>', -Step - Width)) + "]";
-            public override ConsoleColoredString ToColoredString() => $"[SumArr{Step},{Width}]".Color(HeatColor);
+            public override string ToString() => "[" + Ω(Step, '>', '<') + "[-" + Ω(Width, '>', '<') + "+" + Ω(Width, '<', '>') + "]" + Ω(Step + Width, '<', '>') + "]";
+            public override ConsoleColoredString ToColoredString(int depth) => $"{{SumArr{Step},{Width}}}".Color(HeatColor);
 #endif
         }
         private class LoopInstr : Instr
@@ -282,7 +280,7 @@ namespace BfFastRoman
             public List<Instr> Instrs = new List<Instr>();
 #if DEBUG
             public override string ToString() => "[" + string.Join("", Instrs.Select(s => s.ToString())) + "]";
-            public override ConsoleColoredString ToColoredString() => "[".Color(HeatColor) + Instrs.Select(i => i.ToColoredString()).JoinColoredString() + "]".Color(HeatColor);
+            public override ConsoleColoredString ToColoredString(int depth) => "\n" + new string(' ', depth * 2) + "[".Color(HeatColor) + Instrs.Select(i => i.ToColoredString(depth + 1)).JoinColoredString() + "]\n".Color(HeatColor) + new string(' ', depth * 2);
 #endif
         }
         private class MoveZeroInstr : Instr
@@ -290,7 +288,7 @@ namespace BfFastRoman
             public int Move;
 #if DEBUG
             public override string ToString() => Ω(Move, '>', '<') + "[-]";
-            public override ConsoleColoredString ToColoredString() => $"Z{Move}".Color(HeatColor);
+            public override ConsoleColoredString ToColoredString(int depth) => $"(Z{Move})".Color(HeatColor);
 #endif
         }
 
