@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text;
 #if DEBUG
 using System.Text.RegularExpressions;
 using RT.Util.Consoles;
@@ -18,6 +19,9 @@ namespace BfFastRoman
             var start = DateTime.UtcNow;
 
             var code = File.ReadAllText(args[0]);
+            byte[] input = null;
+            if (args.Length >= 2)
+                input = File.Exists(args[1]) ? File.ReadAllBytes(args[1]) : Encoding.UTF8.GetBytes(args[1] + '\n');
 
             pos = 0;
             var parsed = Parse(code).ToList();
@@ -49,7 +53,7 @@ namespace BfFastRoman
             {
                 Console.WriteLine($"Prepare: {(DateTime.UtcNow - start).TotalSeconds:0.000}s");
                 start = DateTime.UtcNow;
-                Execute(prg, Console.OpenStandardInput(), Console.OpenStandardOutput(), compiled.Count);
+                Execute(prg, input == null ? Console.OpenStandardInput() : new MemoryStream(input), Console.OpenStandardOutput(), compiled.Count);
                 Console.WriteLine($"Execute: {(DateTime.UtcNow - start).TotalSeconds:0.000}s");
             }
         }
@@ -432,7 +436,7 @@ namespace BfFastRoman
                 if (tape < tapeStart || tape >= tapeEnd) throw new Exception();
                 if (program < progStart || program >= progEnd) throw new Exception();
                 checked { heatmap[program - progStart]++; }
-                // heatmap.Take(progLen).JoinString(",")
+                // string.Join(",", heatmap.Take(progLen))
 #endif
 
                 sbyte a = *(program++);
@@ -554,7 +558,11 @@ namespace BfFastRoman
 
                     case i_input:
                         flushOutput();
-                        throw new NotImplementedException();
+                        var b = input.ReadByte();
+                        if (b < 0)
+                            throw new EndOfStreamException();
+                        *tape = (sbyte) b;
+                        break;
 
                     case i_output:
 #if DEBUG
