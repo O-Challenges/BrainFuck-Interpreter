@@ -47,10 +47,10 @@ namespace BfFastRoman
 
             fixed (sbyte* prg = compiled.ToArray())
             {
-                Console.WriteLine($"Prepare: {(DateTime.UtcNow - start).TotalSeconds:0.00}s");
+                Console.WriteLine($"Prepare: {(DateTime.UtcNow - start).TotalSeconds:0.000}s");
                 start = DateTime.UtcNow;
                 Execute(prg, Console.OpenStandardInput(), Console.OpenStandardOutput(), compiled.Count);
-                Console.WriteLine($"Execute: {(DateTime.UtcNow - start).TotalSeconds:0.00}s");
+                Console.WriteLine($"Execute: {(DateTime.UtcNow - start).TotalSeconds:0.000}s");
             }
         }
 
@@ -160,6 +160,8 @@ namespace BfFastRoman
         private static List<Instr> mergeNeighbours<T1, T2>(List<Instr> input, Func<T1, T2, bool> canMerge, Func<T1, T2, Instr> doMerge) where T1 : Instr where T2 : Instr
         {
             var result = new List<Instr>();
+            if (input.Count == 0)
+                return result;
             var last = input[0];
             for (int i = 1; i < input.Count; i++)
             {
