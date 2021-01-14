@@ -15,9 +15,9 @@ namespace BfFastRoman
         {
             var start = DateTime.UtcNow;
             var code = File.ReadAllText(args[0]);
-            code = new string(code.Where(c => c == '[' || c == ']' || c == '>' || c == '<' || c == '+' || c == '-' || c == '.' || c == ',').ToArray());
 
 #if DEBUG
+            code = new string(code.Where(c => c == '[' || c == ']' || c == '>' || c == '<' || c == '+' || c == '-' || c == '.' || c == ',').ToArray());
             code = Regex.Replace(code, @"\[<->-(<+)\+(>+)\]", m => m.Groups[1].Length == m.Groups[2].Length ? $"[-<-{new string('<', m.Groups[1].Length - 1)}+{new string('>', m.Groups[1].Length)}]" : m.Value);
 #endif
 
@@ -175,9 +175,12 @@ namespace BfFastRoman
                 if (p[pos] == '>' || p[pos] == '<')
                 {
                     int moves = 0;
-                    while (pos < p.Length && (p[pos] == '>' || p[pos] == '<') && sbyteFit(moves))
+                    while (pos < p.Length && sbyteFit(moves))
                     {
-                        moves += p[pos] == '>' ? 1 : -1;
+                        if (p[pos] == '+' || p[pos] == '-' || p[pos] == '[' || p[pos] == ']' || p[pos] == '.' || p[pos] == ',')
+                            break;
+                        if (p[pos] == '>' || p[pos] == '<')
+                            moves += p[pos] == '>' ? 1 : -1;
                         pos++;
                     }
                     yield return new AddMoveInstr { Move = moves };
@@ -185,9 +188,12 @@ namespace BfFastRoman
                 else if (p[pos] == '+' || p[pos] == '-')
                 {
                     int adds = 0;
-                    while (pos < p.Length && (p[pos] == '+' || p[pos] == '-') && addsFit(adds))
+                    while (pos < p.Length && addsFit(adds))
                     {
-                        adds += p[pos] == '+' ? 1 : -1;
+                        if (p[pos] == '>' || p[pos] == '<' || p[pos] == '[' || p[pos] == ']' || p[pos] == '.' || p[pos] == ',')
+                            break;
+                        if (p[pos] == '+' || p[pos] == '-')
+                            adds += p[pos] == '+' ? 1 : -1;
                         pos++;
                     }
                     yield return new AddMoveInstr { Add = adds };
@@ -214,7 +220,7 @@ namespace BfFastRoman
                 else if (p[pos] == ']')
                     yield break;
                 else
-                    throw new Exception();
+                    pos++; // skip this char
             }
         }
 
