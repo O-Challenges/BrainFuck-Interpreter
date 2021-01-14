@@ -27,7 +27,7 @@ namespace BrainFJit
             var Hanoi = File.ReadAllText(@"D:\c\BF-Challenge-Timwi\BF\hanoi.b");
 
             var start = DateTime.UtcNow;
-            var output = InterpretBrainfuck(Hanoi,
+            var output = InterpretBrainfuck(Mandelbrot,
                 Console.In
             //new StreamReader(File.OpenRead(@"D:\c\BrainFuck-Interpreter-Challenge\gameoflife-input.txt"))
             );
@@ -338,8 +338,6 @@ namespace BrainFJit
                         il.Emit(OpCodes.Ldloc_0);
                         il.Emit(OpCodes.Ldind_U1);
                         il.Emit(OpCodes.Callvirt, streamWriteMethod);
-                        il.Emit(OpCodes.Ldc_I4, 1);
-                        il.Emit(OpCodes.Call, threadSleepMethod);
                         break;
                 }
 
@@ -349,9 +347,9 @@ namespace BrainFJit
             il.Emit(OpCodes.Ret);
             var method = typeBuilder.CreateType().GetMethod("Run", BindingFlags.Public | BindingFlags.Static);
 
-            var stream = new MemoryStream();    //Console.OpenStandardOutput();
+            var stream = new MemoryStream();    //Console.OpenStandardOutput();  //
             method.Invoke(null, new object[] { input, stream });
-            return stream.ToArray().FromUtf8(); //""
+            return stream.ToArray().FromUtf8(); //"";//
         }
 
         private static unsafe string InterpretDirectly(TextReader input, List<int> code)
