@@ -4,21 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Reflection.Emit;
-using System.Runtime.InteropServices;
 using System.Threading;
-
-[assembly: AssemblyTitle("BrainFJit")]
-[assembly: AssemblyDescription("")]
-[assembly: AssemblyConfiguration("")]
-[assembly: AssemblyCompany("")]
-[assembly: AssemblyProduct("BrainFJit")]
-[assembly: AssemblyCopyright("Copyright © Timwi 2021")]
-[assembly: AssemblyTrademark("")]
-[assembly: AssemblyCulture("")]
-[assembly: ComVisible(false)]
-[assembly: Guid("ef410d12-518e-439c-b557-65b4be09c0ba")]
-[assembly: AssemblyVersion("1.0.0.0")]
-[assembly: AssemblyFileVersion("1.0.0.0")]
 
 namespace BrainFJit
 {
@@ -33,65 +19,20 @@ namespace BrainFJit
         [STAThread]
         static void Main(string[] args)
         {
-            var GameOfLife = @"
-       +>>++++[<++++>-]<[<++++++>-]+[<[>>>>+<<<<-]>>>>[<<<<+>>>>>>+<<-]<+
-   +++[>++++++++<-]>.[-]<+++[>+++<-]>+[>>.+<<-]>>[-]<<<++[<+++++>-]<.<<[>>>>+
- <<<<-]>>>>[<<<<+>>>>>>+<<-]<<[>>>>.+<<<++++++++++[<[>>+<<-]>>[<<+>>>>>++++++++
- +++<<<-]<[>+<-]>[<+>>>>+<<<-]>>>[>>>>>>>>>>>>+>+<<     <<<<<<<<<<<-]>>>>>>>>>>
->>[-[>>>>+<<<<-]>[>>>>+<<<<-]>>>]>      >>[<<<+>>  >-    ]<<<[>>+>+<<<-]>[->[<<<
-<+>>>>-]<[<<<  <+>      >>>-]<<<< ]<     ++++++  ++       +[>+++++<-]>>[<<+>>-]<
-<[>---<-]>.[- ]         <<<<<<<<< <      <<<<<< <         -]++++++++++.[-]<-]>>>
->[-]<[-]+++++           +++[>++++        ++++<     -     ]>--.[-]<,----------[<+
->-]>>>>>>+<<<<< <     <[>+>>>>>+>[      -]<<<      <<   <<-]>++++++++++>>>>>[[-]
-<<,<<<<<<<->>>> >    >>[<<<<+>>>>-]<<<<[>>>>+      >+<<<<<-]>>>>>----------[<<<<
-<<<<+<[>>>>+<<<      <-]>>>>[<<<<+>>>>>>+<<-      ]>[>-<-]>++++++++++[>+++++++++
-++<-]<<<<<<[>>>      >+<<<<-]>>>>[<<<<+>>>>>      >+<<-]>>>>[<<->>-]<<++++++++++
-[>+<-]>[>>>>>>>      >>>>>+>+<<<<      <<<<<      <<<<-]>>> >>     >>>>>>>[-[>>>
->+<<<<-]>[>>>>       +<<<<-]>> >       ]>> >           [<< <        +>>>-]+<<<[>
->>-<<<-]>[->[<      <<<+>>>>-]         <[ <            < <           <+>>>>-]<<<
-<]<<<<<<<<<<<, [    -]]>]>[-+++        ++               +    +++     ++[>+++++++
-++++>+++++++++ +    +<<-]>[-[>>>      +<<<-      ]>>>[ <    <<+      >>>>>>>+>+<
-<<<<-]>>>>[-[> >    >>+<<<<-]>[>      >>>+< <    <<-]> >    >]>      >>[<<<+>>>-
-]<<<[>>+>+<<< -     ]>[->[<<<<+>      >>>-] <    [<<< <    +>>       >>-]<<<<]<<
-<<<<<<[>>>+<< <     -]>>>[<<<+>>      >>>>> +    >+<< <             <<-]<<[>>+<<
--]>>[<<+>>>>>      >+>+<<<<<-]>>      >>[-[ >    >>>+ <            <<<-]>[>>>>+<
-<<<-]>[>>>>+<      <<<-]>>]>>>[ -    ]<[>+< -    ]<[ -           [<<<<+>>>>-]<<<
-<]<<<<<<<<]<<      <<<<<<<<++++ +    +++++  [   >+++ +    ++++++[<[>>+<<-]>>[<<+
->>>>>++++++++ +    ++<<<     -] <    [>+<- ]    >[<+ >    >>>+<<<-]>>>[<<<+>>>-]
-<<<[>>>+>>>>  >    +<<<<     <<      <<-]> >    >>>>       >>>[>>+<<-]>>[<<+<+>>
->-]<<<------ -    -----[     >>      >+<<< -    ]>>>       [<<<+> > >>>>>+>+<<<<
-<-]>>>>[-[>> >    >+<<<<    -] >     [>>>> +    <<<<-       ]>>> ]  >>>[<<<+>>>-
-]<<<[>>+>+<< <    -]>>>     >>           > >    [<<<+               >>>-]<<<[>>>
-+<<<<<+>>-                  ]>           >     >>>>>[<             <<+>>>-]<<<[>
->>+<<<<<<<                  <<+         >      >>>>>-]<          <<<<<<[->[<<<<+
->>>>-]<[<<<<+>>>>-]<<<<]>[<<<<<<    <+>>>      >>>>-]<<<<     <<<<<+++++++++++[>
->>+<<<-]>>>[<<<+>>>>>>>+>+<<<<<-]>>>>[-[>     >>>+<<<<-]>[>>>>+<<<<-]>>>]>>>[<<<
-+>>>-]<<<[>>+>+<<<-]>>>>>>>[<<<+>>>-]<<<[     >>>+<<<<<+>>-]>>>>>>>[<<<+>>>-]<<<
-[>>>+<<<<<<<<<+>>>>>>-]<<<<<<<[->[< <  <     <+>>>>-]<[<<<<+>>>>-]<<<<]>[<<<<<<<
-+>>>>>>>-]<<<<<<<<<+++++++++++[>>> >        >>>+>+<<<<<<<<-]>>>>>>>[-[>>>>+<<<<-
-]>[>>>>+<<<<-]>>>]>>>[<<<+>>>-]<<< [       >>+>+<<<-]>>>>>>>[<<<+>>>-]<<<[>>>+<<
-<<<+>>-]>>>>>>>[<<<+>>>-]<<<[>>>+<        <<<<<<<<+>>>>>>-]<<<<<<<[->[<<<<+>>>>-
- ]<[<<<<+>>>>-]<<<<]>[<<<<<<<+>>>>>      >>-]<<<<<<<----[>>>>>>>+<<<<<<<+[>>>>>
- >>-<<<<<<<[-]]<<<<<<<[>>>>>>>>>>>>+>+<<<<<<<<<<<<<-][   lft@df.lth.se   ]>>>>>
-   >>>>>>>[-[>>>>+<<<<-]>[>>>>+<<<<-]>[>>>>+<<<<-]>>]>>>[-]<[>+<-]<[-[<<<<+>>
-       >>-]<<<<]<<<<<<[-]]<<<<<<<[-]<<<<-]<-]>>>>>>>>>>>[-]<<]<<<<<<<<<<]
-
-";
-
             var HelloWorld1 = @"++++++++[>++++[>++>+++>+++>+<<<<-]>+>+>->>+[<]<-]>>.>---.+++++++..+++.>>.<-.<.+++.------.--------.>>+.>++.";
+            var HelloWorld2 = @">++++++++[-<+++++++++>]<.>>+>-[+]++>++>+++[>[->+++<<+++>]<<]>-----.>->+++..+++.>-.<<+[>[+>+]>>]<--------------.>>.+++.------.--------.>+.>+.";
 
-            var HelloWorld2 = @">++++++++[-<+++++++++>]<.>>+>-[+]++>++>+++[>[->+++<<+++>]<<]>-----.>->
-+++..+++.>-.<<+[>[+>+]>>]<--------------.>>.+++.------.--------.>+.>+.";
-
-            var Mandelbrot = File.ReadAllText("mandelbrot.b");
+            var Mandelbrot = File.ReadAllText(@"D:\c\BF-Challenge-Timwi\BF\mandelbrot.b");
+            var NinetyNineBottles = File.ReadAllText(@"D:\c\BF-Challenge-Timwi\BF\99bottles.b");
+            var Hanoi = File.ReadAllText(@"D:\c\BF-Challenge-Timwi\BF\hanoi.b");
 
             var start = DateTime.UtcNow;
-            var output = InterpretBrainfuck(Mandelbrot,
+            var output = InterpretBrainfuck(Hanoi,
                 Console.In
             //new StreamReader(File.OpenRead(@"D:\c\BrainFuck-Interpreter-Challenge\gameoflife-input.txt"))
             );
             Console.WriteLine(output);
-            Console.WriteLine($"Took {(DateTime.UtcNow - start).TotalSeconds:0.00} sec.");
+            Console.WriteLine($"Took {(DateTime.UtcNow - start).TotalSeconds:0.0000} sec.");
             Console.WriteLine($"{IntPtr.Size * 8}-bit");
             Console.ReadLine();
         }
@@ -107,7 +48,7 @@ namespace BrainFJit
             AddMultR,
             SubMultL,
             SubMultR,
-            SetZero,
+            Set,
             Input,
             Output,
             Jz,
@@ -140,10 +81,10 @@ namespace BrainFJit
                         var len = j - i;
                         switch (bf[i])
                         {
-                            case '<': code.Add((int) Instr.PtrLeft | (len << 4)); break;
-                            case '>': code.Add((int) Instr.PtrRight | (len << 4)); break;
-                            case '+': code.Add((int) Instr.Add | (len << 4)); break;
-                            case '-': code.Add((int) Instr.Sub | (len << 4)); break;
+                            case '<': code.Add((int) Instr.PtrLeft | (len << INSTR_BITS)); break;
+                            case '>': code.Add((int) Instr.PtrRight | (len << INSTR_BITS)); break;
+                            case '+': if (code.Count > 0 && (Instr) code[code.Count - 1] == Instr.Set) code[code.Count - 1] = (int) Instr.Set | (len << INSTR_BITS); else code.Add((int) Instr.Add | (len << INSTR_BITS)); break;
+                            case '-': if (code.Count > 0 && (Instr) code[code.Count - 1] == Instr.Set) code[code.Count - 1] = (int) Instr.Set | ((256 - len) << INSTR_BITS); else code.Add((int) Instr.Sub | (len << INSTR_BITS)); break;
                         }
                         i = j - 1;
                         break;
@@ -186,7 +127,7 @@ namespace BrainFJit
                                 case Instr.AddMultR:
                                 case Instr.SubMultL:
                                 case Instr.SubMultR:
-                                case Instr.SetZero:
+                                case Instr.Set:
                                 case Instr.Input:
                                 case Instr.Output:
                                 case Instr.Jz:
@@ -197,7 +138,7 @@ namespace BrainFJit
                         if (ptrOffset == 0 && intOffset == -1)
                         {
                             outerCode.AddRange(instrs);
-                            outerCode.Add((int) Instr.SetZero);
+                            outerCode.Add((int) Instr.Set);
                             goto done;
                         }
                         optimizationDoesNotApply:
@@ -227,13 +168,18 @@ namespace BrainFJit
         public static string Compile(TextReader input, List<int> code)
         {
             // ## COMPILER STARTS HERE
+#if NET_CORE
+            var asmBuilder = AssemblyBuilder.DefineDynamicAssembly(new AssemblyName("BF_IL"), AssemblyBuilderAccess.Run);
+#else
             var asmBuilder = Thread.GetDomain().DefineDynamicAssembly(new AssemblyName("BF_IL"), AssemblyBuilderAccess.RunAndSave);
+#endif
             var modBuilder = asmBuilder.DefineDynamicModule(asmBuilder.GetName().Name);
             var typeBuilder = modBuilder.DefineType("BFRunner", TypeAttributes.Public | TypeAttributes.Abstract | TypeAttributes.Sealed, typeof(object));
             var methodBuilder = typeBuilder.DefineMethod("Run", MethodAttributes.Public | MethodAttributes.Static, typeof(void), new Type[] { typeof(TextReader), typeof(Stream) });
             var il = methodBuilder.GetILGenerator();
             var textReaderReadMethod = typeof(TextReader).GetMethod("Read", BindingFlags.Public | BindingFlags.Instance, null, Type.EmptyTypes, null);
             var streamWriteMethod = typeof(Stream).GetMethod("WriteByte", BindingFlags.Public | BindingFlags.Instance, null, new[] { typeof(byte) }, null);
+            var threadSleepMethod = typeof(Thread).GetMethod("Sleep", BindingFlags.Public | BindingFlags.Static, null, new[] { typeof(int) }, null);
 
             var ptr = il.DeclareLocal(typeof(byte*));
             il.Emit(OpCodes.Ldc_I4, 16 * 1024);
@@ -249,9 +195,6 @@ namespace BrainFJit
 
             for (var i = 0; i < code.Count; i++)
             {
-                if (labels.TryGetValue(i, out var lbl))
-                    il.MarkLabel(lbl);
-
                 var op1 = (code[i] >> INSTR_BITS) & OP_MASK;
                 var op2 = (code[i] >> OP2_START) & OP_MASK;
                 switch ((Instr) (code[i] & INSTR_MASK))
@@ -297,8 +240,11 @@ namespace BrainFJit
 
                         il.Emit(OpCodes.Ldloc_0);
                         il.Emit(OpCodes.Ldind_U1);
-                        il.Emit(OpCodes.Ldc_I4, op1);
-                        il.Emit(OpCodes.Mul);                  // (ptr - op2) *(ptr - op2) (*ptr * op2)
+                        if (op1 != 1)
+                        {
+                            il.Emit(OpCodes.Ldc_I4, op1);
+                            il.Emit(OpCodes.Mul);
+                        }
                         il.Emit(OpCodes.Add);
                         il.Emit(OpCodes.Conv_U1);
                         il.Emit(OpCodes.Stind_I1);             // *(ptr - op2) = *(ptr - op2) + (*ptr * op2)
@@ -313,8 +259,11 @@ namespace BrainFJit
 
                         il.Emit(OpCodes.Ldloc_0);
                         il.Emit(OpCodes.Ldind_U1);
-                        il.Emit(OpCodes.Ldc_I4, op1);
-                        il.Emit(OpCodes.Mul);
+                        if (op1 != 1)
+                        {
+                            il.Emit(OpCodes.Ldc_I4, op1);
+                            il.Emit(OpCodes.Mul);
+                        }
                         il.Emit(OpCodes.Add);
                         il.Emit(OpCodes.Conv_U1);
                         il.Emit(OpCodes.Stind_I1);
@@ -329,8 +278,11 @@ namespace BrainFJit
 
                         il.Emit(OpCodes.Ldloc_0);
                         il.Emit(OpCodes.Ldind_U1);
-                        il.Emit(OpCodes.Ldc_I4, op1);
-                        il.Emit(OpCodes.Mul);
+                        if (op1 != 1)
+                        {
+                            il.Emit(OpCodes.Ldc_I4, op1);
+                            il.Emit(OpCodes.Mul);
+                        }
                         il.Emit(OpCodes.Sub);
                         il.Emit(OpCodes.Conv_U1);
                         il.Emit(OpCodes.Stind_I1);
@@ -345,16 +297,19 @@ namespace BrainFJit
 
                         il.Emit(OpCodes.Ldloc_0);
                         il.Emit(OpCodes.Ldind_U1);
-                        il.Emit(OpCodes.Ldc_I4, op1);
-                        il.Emit(OpCodes.Mul);
+                        if (op1 != 1)
+                        {
+                            il.Emit(OpCodes.Ldc_I4, op1);
+                            il.Emit(OpCodes.Mul);
+                        }
                         il.Emit(OpCodes.Sub);
                         il.Emit(OpCodes.Conv_U1);
                         il.Emit(OpCodes.Stind_I1);
                         break;
 
-                    case Instr.SetZero:
+                    case Instr.Set:
                         il.Emit(OpCodes.Ldloc_0);
-                        il.Emit(OpCodes.Ldc_I4, 0);
+                        il.Emit(OpCodes.Ldc_I4, op1);
                         il.Emit(OpCodes.Stind_I1);
                         break;
 
@@ -383,15 +338,20 @@ namespace BrainFJit
                         il.Emit(OpCodes.Ldloc_0);
                         il.Emit(OpCodes.Ldind_U1);
                         il.Emit(OpCodes.Callvirt, streamWriteMethod);
+                        il.Emit(OpCodes.Ldc_I4, 1);
+                        il.Emit(OpCodes.Call, threadSleepMethod);
                         break;
                 }
+
+                if (labels.TryGetValue(i, out var label))
+                    il.MarkLabel(label);
             }
             il.Emit(OpCodes.Ret);
             var method = typeBuilder.CreateType().GetMethod("Run", BindingFlags.Public | BindingFlags.Static);
 
-            var stream = new MemoryStream();
+            var stream = new MemoryStream();    //Console.OpenStandardOutput();
             method.Invoke(null, new object[] { input, stream });
-            return stream.ToArray().FromUtf8();
+            return stream.ToArray().FromUtf8(); //""
         }
 
         private static unsafe string InterpretDirectly(TextReader input, List<int> code)
@@ -422,7 +382,7 @@ namespace BrainFJit
                         case Instr.AddMultR: *(ptr + (instr >> OP2_START)) += (byte) (((instr >> INSTR_BITS) & OP_MASK) * *ptr); break;
                         case Instr.SubMultL: *(ptr - (instr >> OP2_START)) -= (byte) (((instr >> INSTR_BITS) & OP_MASK) * *ptr); break;
                         case Instr.SubMultR: *(ptr + (instr >> OP2_START)) -= (byte) (((instr >> INSTR_BITS) & OP_MASK) * *ptr); break;
-                        case Instr.SetZero: *ptr = 0; break;
+                        case Instr.Set: *ptr = (byte) ((instr >> INSTR_BITS) & OP_MASK); break;
 
                         case Instr.Jz: if (*ptr == 0) codePtr = startInstrPtr + (instr >> INSTR_BITS); break;
                         case Instr.Jnz: if (*ptr != 0) codePtr = startInstrPtr + (instr >> INSTR_BITS); break;
@@ -470,7 +430,7 @@ namespace BrainFJit
                 Instr.AddMultR => $">{op2}+{op1}×",
                 Instr.SubMultL => $"<{op2}-{op1}×",
                 Instr.SubMultR => $">{op2}-{op1}×",
-                Instr.SetZero => "0",
+                Instr.Set => "0",
                 Instr.Input => ",",
                 Instr.Output => ".",
                 //Instr.Jz => $"{ix}[{i >> INSTR_BITS}",

@@ -1,8 +1,11 @@
-﻿Microsoft Visual Studio Solution File, Format Version 12.00
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 16
 VisualStudioVersion = 16.0.29806.167
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{C372F812-2364-49C1-AF0F-3217F8E8E1D2}") = "BrainFJit", "Src\BrainFJit.csproj", "{D6BE34AA-8B88-499C-BD44-81F5EA39F19B}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BrainFJit", "NetFx\BrainFJit.csproj", "{D6BE34AA-8B88-499C-BD44-81F5EA39F19B}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "BrainFJitCore", "NetCore\BrainFJitCore.csproj", "{18ED1CC5-A996-45C7-A4E6-D65C53040E84}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -14,6 +17,10 @@ Global
 		{D6BE34AA-8B88-499C-BD44-81F5EA39F19B}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{D6BE34AA-8B88-499C-BD44-81F5EA39F19B}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{D6BE34AA-8B88-499C-BD44-81F5EA39F19B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{18ED1CC5-A996-45C7-A4E6-D65C53040E84}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{18ED1CC5-A996-45C7-A4E6-D65C53040E84}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{18ED1CC5-A996-45C7-A4E6-D65C53040E84}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{18ED1CC5-A996-45C7-A4E6-D65C53040E84}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
