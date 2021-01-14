@@ -298,6 +298,8 @@ namespace BfFastRoman
         private const sbyte i_findZero = 110;
         private const sbyte i_sumArr = 112;
         private const sbyte i_addMult = 113;
+        private const sbyte i_addMult1 = 114;
+        private const sbyte i_addMult2 = 115;
         private const sbyte i_end = 122;
 
         private static List<sbyte> Compile(List<Instr> prog)
@@ -345,8 +347,15 @@ namespace BfFastRoman
                 }
                 else if (instr is AddMultInstr amul)
                 {
-                    result.Add(i_addMult);
-                    result.Add(checked((sbyte) amul.Ops.Length));
+                    if (amul.Ops.Length == 1)
+                        result.Add(i_addMult1);
+                    else if (amul.Ops.Length == 2)
+                        result.Add(i_addMult2);
+                    else
+                    {
+                        result.Add(i_addMult);
+                        result.Add(checked((sbyte) amul.Ops.Length));
+                    }
                     var total = 0;
                     foreach (var op in amul.Ops)
                     {
@@ -506,6 +515,27 @@ namespace BfFastRoman
                                 *tape = 0;
                                 tape -= step + width;
                             }
+                        }
+                        break;
+
+                    case i_addMult1:
+                        {
+                            sbyte dist = *(program++);
+                            sbyte mult = *(program++);
+                            *(tape + dist) += (sbyte) (mult * *tape);
+                            *tape = 0;
+                        }
+                        break;
+
+                    case i_addMult2:
+                        {
+                            sbyte dist = *(program++);
+                            sbyte mult = *(program++);
+                            *(tape + dist) += (sbyte) (mult * *tape);
+                            dist = *(program++);
+                            mult = *(program++);
+                            *(tape + dist) += (sbyte) (mult * *tape);
+                            *tape = 0;
                         }
                         break;
 
