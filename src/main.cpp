@@ -6,7 +6,7 @@
 
 #define BUFFER_SIZE 30000
 #define LOOP_BUFFER 500
-#define NO_LOOP_POS 33333
+#define NO_LOOP_POS 0
 
 class bfShell
 {
@@ -34,7 +34,7 @@ private:
     unsigned int bufferPos = 0;
     char instructions[107] = "++++++++[>++++[>++>+++>+++>+<<<<-]>+>+>->>+[<]<-]>>.>---.+++++++..+++.>>.<-.<.+++.------.--------.>>+.>++.";
     char* instructionIndex = &instructions[0];
-    int loopPos[LOOP_BUFFER] = { NO_LOOP_POS };
+    char *loopPos[LOOP_BUFFER] = { NO_LOOP_POS };
     int currentLoop = -1;
 
     void nextInstruction()
@@ -81,8 +81,17 @@ private:
 
     void startLoop()
     {
+        if(bufferStrip[bufferPos] == 0)
+        {
+            do
+            {
+                instructionIndex++;
+            } while (*instructionIndex != ']');
+            instructionIndex++;
+        }
+        
         currentLoop++;
-        loopPos[currentLoop] = bufferPos;
+        loopPos[currentLoop] = instructionIndex + 1;
     }
     void checkLoop()
     {
@@ -90,9 +99,10 @@ private:
         {
             loopPos[currentLoop] = NO_LOOP_POS;
             currentLoop--;
+            return;
         }else
         {
-            bufferPos = loopPos[currentLoop];
+            instructionIndex = loopPos[currentLoop];
         }
     }
 
@@ -132,7 +142,7 @@ private:
 
     void outputBufferAtCurrentPos()
     {
-        std::cout<<bufferStrip[bufferPos];
+        std::cout<<bufferStrip[bufferPos]<<" ";
     }
 };
 
@@ -145,5 +155,9 @@ int main()
     {
         test.clock();
     }
+
+    /*
+    char temp = 72;
+    std::cout<<"\n"<<temp<<" "<<(int)temp;*/
     return 0;
 }
