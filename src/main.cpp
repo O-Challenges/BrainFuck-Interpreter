@@ -43,7 +43,20 @@ private:
         case '+':
             addToBufferStrip();
             break;
+        case '-':
+            subtractToBufferStrip();
+            break;
         
+        case '>':
+            nextBufferPos();
+            break;
+        case '<':
+            previousBufferPos();
+            break;
+        
+        case '.':
+            outputBufferAtCurrentPos();
+            break;
         default:
             break;
         }
@@ -52,6 +65,31 @@ private:
     void addToBufferStrip()
     {
         bufferStrip[bufferPos] = bufferStrip[bufferPos] + 1;
+    }
+    void subtractToBufferStrip()
+    {
+        bufferStrip[bufferPos]--;
+    }
+
+    void nextBufferPos()
+    {
+        bufferPos++;
+        if(bufferPos > BUFFER_SIZE - 1)
+        {
+            bufferPos = 0;
+        }
+    }
+    void previousBufferPos()
+    {
+        bufferPos--;
+        if(bufferPos < 0)
+        {
+            bufferPos = BUFFER_SIZE - 1;
+        }
+    }
+
+    void outputBufferAtCurrentPos()
+    {
         std::cout<<bufferStrip[bufferPos];
     }
 };
