@@ -2,15 +2,23 @@
 // g++ src/main.cpp -o build/interpreter.exe -std=c++11
 
 #include <iostream>
+#include <windows.h>
 
 #define BUFFER_SIZE 30000
-#define MAX_LOOP_STACK 15000
+#define LOOP_BUFFER 500
+#define NO_LOOP_POS 33333
 
 class bfShell
 {
 public:
     bfShell()
-    {}
+    {
+        for (int i = 0; i < BUFFER_SIZE - 1; i++)
+        {
+            bufferStrip[bufferPos] = 0;
+        }
+        
+    }
 
     void clock()
     {
@@ -22,10 +30,12 @@ public:
     {}
 
 private:
-    char *bufferStrip = new char[BUFFER_SIZE];
-    int bufferPos = 0;
+    signed char *bufferStrip = new signed char[BUFFER_SIZE];
+    unsigned int bufferPos = 0;
     char instructions[107] = "++++++++[>++++[>++>+++>+++>+<<<<-]>+>+>->>+[<]<-]>>.>---.+++++++..+++.>>.<-.<.+++.------.--------.>>+.>++.";
     char* instructionIndex = &instructions[0];
+    int loopPos[LOOP_BUFFER] = { NO_LOOP_POS };
+    int currentLoop = -1;
 
     void nextInstruction()
     {
@@ -57,18 +67,50 @@ private:
         case '.':
             outputBufferAtCurrentPos();
             break;
+
+        case '[':
+            startLoop();
+            break;
+        case ']':
+            checkLoop();
+            break;
         default:
             break;
         }
     }
 
+    void startLoop()
+    {
+        currentLoop++;
+        loopPos[currentLoop] = bufferPos;
+    }
+    void checkLoop()
+    {
+        if(bufferStrip[bufferPos] == 0)
+        {
+            loopPos[currentLoop] = NO_LOOP_POS;
+            currentLoop--;
+        }else
+        {
+            bufferPos = loopPos[currentLoop];
+        }
+    }
+
     void addToBufferStrip()
     {
-        bufferStrip[bufferPos] = bufferStrip[bufferPos] + 1;
+        bufferStrip[bufferPos]++;
+        if(bufferStrip[bufferPos] > 255)
+        {
+            bufferStrip[bufferPos] = 0;
+        }
     }
     void subtractToBufferStrip()
     {
         bufferStrip[bufferPos]--;
+        if(bufferStrip[bufferPos] < 0)
+        {
+            bufferStrip[bufferPos] = 255;
+        }
     }
 
     void nextBufferPos()
@@ -96,6 +138,8 @@ private:
 
 int main()
 {
+    SetConsoleCP(437);
+    SetConsoleOutputCP(437);
     bfShell test;
     for (int i = 0; i < 107; i++)
     {
