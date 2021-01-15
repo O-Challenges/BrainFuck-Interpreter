@@ -22,8 +22,8 @@ public:
     {}
 
 private:
-    char bufferStrip[30000];
-    char* bufferPos = &bufferStrip[0];
+    char *bufferStrip = new char[BUFFER_SIZE];
+    int bufferPos = 0;
     char instructions[107] = "++++++++[>++++[>++>+++>+++>+<<<<-]>+>+>->>+[<]<-]>>.>---.+++++++..+++.>>.<-.<.+++.------.--------.>>+.>++.";
     char* instructionIndex = &instructions[0];
 
@@ -34,7 +34,6 @@ private:
         {
             instructionIndex = &instructions[0];
         }
-        std::cout<<*instructionIndex;
     }
 
     void parseChar(char type)
@@ -52,8 +51,8 @@ private:
 
     void addToBufferStrip()
     {
-        (*bufferPos)++;
-        std::cout<<*bufferPos;
+        bufferStrip[bufferPos] = bufferStrip[bufferPos] + 1;
+        std::cout<<bufferStrip[bufferPos];
     }
 };
 
