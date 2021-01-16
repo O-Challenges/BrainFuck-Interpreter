@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Text;
 #if DEBUG
 using System.Reflection;
@@ -12,10 +13,16 @@ using RT.Util.ExtensionMethods;
 
 namespace BfFastRoman
 {
-    class Program
+    unsafe class Program
     {
-        static unsafe void Main(string[] args)
+        static void Main(string[] args)
         {
+            DiscoverCodeLocations();
+            WriteCodeIntoTheMethod();
+            OutputStream = Console.OpenStandardOutput();
+            TheMethod();
+            return;
+
             System.Diagnostics.Process.GetCurrentProcess().PriorityClass = System.Diagnostics.ProcessPriorityClass.RealTime; // this is only here for more consistent timing
             var start = DateTime.UtcNow;
 
@@ -62,6 +69,195 @@ namespace BfFastRoman
                 Console.WriteLine($"Execute: {(DateTime.UtcNow - start).TotalSeconds:0.000}s");
             }
         }
+
+        static byte* OutputMethodEntry = null;
+        static byte* InputMethodEntry = null;
+        static byte* CodeStart = null; // the first byte in TheMethod that is safely writable; this points to right after the first ReadStack call returns
+        static byte* CodeEnd = null; // the first byte in TheMethod that is no longer safely writable
+
+        private static void DiscoverCodeLocations()
+        {
+            TheMethod(); // discard first call in case of JIT etc
+            CodeStart = (byte*) TheMethod();
+            if (CodeStart == null)
+            {
+                Console.WriteLine("Unable to locate TheMethod");
+                throw new Exception();
+            }
+
+            // Search through TheMethod to find input and output methods
+            void assert(bool v) { if (!v) throw new Exception(); }
+            var ptr = CodeStart;
+            while (true)
+            {
+                if (*(uint*) ptr == 0xDeadFace)
+                {
+                    ptr += 4;
+                    CodeEnd = ptr;
+                    break;
+                }
+                if (*(uint*) ptr == 0xBeefCafe)
+                {
+#if false
+                    var chunk = ptr - 1;
+                    for (int r = 0; r < 4; r++)
+                    {
+                        for (int i = 0; i < 16; i++)
+                            Console.Write($"{*chunk++:X2} ");
+                        Console.WriteLine();
+                    }
+#endif
+                    // We're expecting something like this (with less redundancy in release/optimized mode)
+                    //
+                    // b9 fe ca ef be          mov    ecx,0xbeefcafe
+                    // e8 b3 9c ff ff          call   0xffffffffffff9cbd
+                    // 90                      nop
+                    // e8 a5 9c ff ff          call   0xffffffffffff9cb5
+                    // 89 45 74                mov    DWORD PTR [rbp+0x74],eax
+                    // 8b 4d 74                mov    ecx,DWORD PTR [rbp+0x74]
+                    // e8 a2 9c ff ff          call   0xffffffffffff9cbd
+
+                    ptr--;
+                    assert(*ptr == 0xB9); // mov ecx, u32
+                    ptr += 5;
+                    assert(*ptr == 0xE8); // call [rel]
+                    ptr++;
+                    int offset1 = *(int*) ptr;
+                    ptr += 4;
+                    OutputMethodEntry = ptr + offset1;
+                    if (*ptr == 0x90)
+                        ptr++;
+                    assert(*ptr == 0xE8); // call [rel]
+                    ptr++;
+                    int offset2 = *(int*) ptr;
+                    ptr += 4;
+                    InputMethodEntry = ptr + offset2;
+                    if (*ptr == 0x89)
+                        ptr += 3;
+                    if (*ptr == 0x8B)
+                    {
+                        ptr++;
+                        if (*ptr == 0xC8)
+                            ptr++;
+                        else if (*ptr == 0x4D)
+                            ptr += 2;
+                        else
+                            throw new Exception();
+                    }
+                    assert(*ptr == 0xE8); // call [rel]
+                    ptr++;
+                    int offset3 = *(int*) ptr;
+                    ptr += 4;
+                    byte* method3 = ptr + offset3;
+                    if (method3 != OutputMethodEntry)
+                    {
+                        Console.WriteLine("Expected to find the Output method twice but didn't.");
+                        throw new Exception();
+                    }
+
+                    break;
+                }
+                ptr++;
+            }
+            if (InputMethodEntry == null || OutputMethodEntry == null)
+            {
+                Console.WriteLine("Could not find the Input or the Output method entry points.");
+                throw new Exception();
+            }
+        }
+
+        static Stream InputStream;
+        static Stream OutputStream;
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        static uint Input()
+        {
+            if (InputStream == null) // it's null during initialisation, when we call this method in order to discover where it is, but do not actually want it to execute
+                return 123;
+            var input = InputStream.ReadByte();
+            if (input < 0)
+                throw new EndOfStreamException();
+            return (uint) input;
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        static void Output(uint value)
+        {
+            if (OutputStream == null) // it's null during initialisation, when we call this method in order to discover where it is, but do not actually want it to execute
+                return;
+            OutputStream.WriteByte(checked((byte) value));
+        }
+
+        static ulong[] ReadStack()
+        {
+            // Allocate something on the stack to get a pointer to the stack
+            var x = stackalloc ulong[2];
+            // Read the stack past the thing we allocated, i.e. things pushed to stack before the stackalloc.
+            // One of those things is the return address pushed by the call to this method.
+            var result = new ulong[32];
+            for (int i = 0; i < result.Length; i++)
+                result[i] = *x++;
+            return result;
+        }
+
+        static ulong TheMethod()
+        {
+            var r1 = ReadStack();
+            var r2 = ReadStack();
+            var r3 = ReadStack();
+            var r4 = ReadStack();
+            Output(0xBeefCafe); // used to discover the address of the output method
+            Output(Input()); // used to discover the address of the input method
+#if false
+            for (int i = 0; i < r1.Length; i++)
+            {
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.Write($"{i,2}:  ");
+                Console.ForegroundColor = r1[i] == r2[i] ? ConsoleColor.Gray : ConsoleColor.White;
+                Console.Write($"{r1[i]:X16}  ");
+                Console.ForegroundColor = r1[i] == r2[i] ? ConsoleColor.Gray : ConsoleColor.Red;
+                Console.Write($"{r2[i]:X16}  ");
+                Console.ForegroundColor = r2[i] == r3[i] ? ConsoleColor.Gray : ConsoleColor.Red;
+                Console.Write($"{r3[i]:X16}  ");
+                Console.ForegroundColor = r3[i] == r4[i] ? ConsoleColor.Gray : ConsoleColor.Red;
+                Console.WriteLine($"{r4[i]:X16}  ");
+            }
+#endif
+            for (int i = 0; i < r1.Length; i++)
+            {
+                // For each of the calls above, RIP is pushed to the stack. Its exact offset within the stack frame
+                // varies depending on build optimizations, debugger presence etc. But it's a few bytes higher for
+                // each of the above calls, so find it by looking for that pattern.
+                if (!(r2[i] - r1[i] < 32 && r3[i] - r2[i] < 32 && r4[i] - r3[i] < 32 && r1[i] != r2[i] && r2[i] != r3[i] && r3[i] != r4[i]))
+                    r1[i] = 0;
+            }
+            var candidates = r1.Where(x => x != 0).ToList();
+            if (candidates.Count != 1)
+                return 0; // don't throw here; this might fail on first run due to JIT maybe?
+            Output(0xDeadFace); // marks the end of the code
+            return candidates[0];
+        }
+
+        private static void WriteCodeIntoTheMethod()
+        {
+            var codePtr = CodeStart;
+            var label1 = codePtr;
+
+            *codePtr++ = 0xB9; // mov ecx, 2F
+            *codePtr++ = 0x2F;
+            *codePtr++ = 0x00;
+            *codePtr++ = 0x00;
+            *codePtr++ = 0x00;
+
+            *codePtr++ = 0xE8;
+            *(int*) codePtr = checked((int) (OutputMethodEntry - (codePtr + 4)));
+            codePtr += 4;
+
+            *codePtr++ = 0xE9;
+            *(int*) codePtr = checked((int) (label1 - (codePtr + 4)));
+            codePtr += 4;
+        }
+
 
         static int pos;
 
