@@ -16,6 +16,7 @@ The following languages are going to be included with their respective author:
 | C++          | @benkyd            |
 | C++        	| @SomeGithub01    	|
 | C++        	| @EntireTwix      	|
+| C++          | @yasserhcn         |
 | C#         	| @caesay          	|
 | C#         	| @Nekiwo          	|
 | C#           | @rstarkov          |
