@@ -615,7 +615,19 @@ namespace BfFastRoman
                         dist += op.dist;
                         // *(tape + dist) += (sbyte) (mult * *tape);
                         _movzx_eax_byte_ptr_rdi();
-                        if (op.mult != 1)
+                        if (op.mult == 2)
+                        {
+                            add(0xD0); add(0xE0); // shl al, 1
+                        }
+                        else if (op.mult == 5)
+                        {
+                            add(0x67); add(0x8D); add(0x04); add(0x80); // lea eax, [eax+eax*4]
+                        }
+                        else if (op.mult == -1)
+                        {
+                            add(0xF6); add(0xD8); // neg al
+                        }
+                        else if (op.mult != 1)
                         {
                             _mov_ecx_32(op.mult);
                             add(0xF7); add(0xE1); // mul ecx
