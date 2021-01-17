@@ -3,28 +3,19 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Text;
-#if DEBUG
-using System.Reflection;
-using System.Text.RegularExpressions;
-using RT.Util.Consoles;
-using RT.Util.ExtensionMethods;
-#endif
 
 namespace BfFastRoman
 {
     unsafe class Program
     {
+        static DateTime _start, _startExec;
+
         static void Main(string[] args)
         {
-            DiscoverCodeLocations();
-            WriteCodeIntoTheMethod();
-            OutputStream = Console.OpenStandardOutput();
-            TheMethod();
-            return;
-
             System.Diagnostics.Process.GetCurrentProcess().PriorityClass = System.Diagnostics.ProcessPriorityClass.RealTime; // this is only here for more consistent timing
-            var start = DateTime.UtcNow;
+            _start = DateTime.UtcNow;
 
             var code = File.ReadAllText(args[0]);
             byte[] input = null;
@@ -34,40 +25,17 @@ namespace BfFastRoman
             pos = 0;
             var parsed = Parse(code).ToList();
             var optimized = Optimize(parsed);
-            var compiled = Compile(optimized);
-            compiled.Add(i_end);
 
-#if DEBUG
-            // Serialize the program back to BF and check that we didn't change it
-            code = new string(code.Where(c => c == '[' || c == ']' || c == '>' || c == '<' || c == '+' || c == '-' || c == '.' || c == ',').ToArray());
-            code = Regex.Replace(code, @"\[<->-(<+)\+(>+)\]", m => m.Groups[1].Length == m.Groups[2].Length ? $"[-<-{new string('<', m.Groups[1].Length - 1)}+{new string('>', m.Groups[1].Length)}]" : m.Value);
-            var serialized = string.Join("", parsed.Select(p => p.ToString()));
-            if (code != serialized) throw new Exception();
-            serialized = string.Join("", optimized.Select(p => p.ToString()));
-            if (code != serialized) throw new Exception();
-#endif
-#if DEBUG
-            // Highlight hottest instructions from last "instrumented" run
-            try
-            {
-                var heatmap = File.ReadAllText(Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location), "heatmap.txt")).Split(',').Select(v => int.Parse(v.Trim())).ToArray();
-                var maxheat = heatmap.Max();
-                foreach (var instr in recurse(optimized))
-                    instr.Heat = heatmap[instr.CompiledPos] / (double) maxheat;
-            }
-            catch { }
-            foreach (var instr in optimized)
-                ConsoleUtil.Write(instr.ToColoredString(0));
-            Console.WriteLine();
-#endif
+            DiscoverCodeLocations();
+            _compilePtr = CodeStart;
+            CompileIntoTheMethod(optimized, 0);
 
-            fixed (sbyte* prg = compiled.ToArray())
-            {
-                Console.WriteLine($"Prepare: {(DateTime.UtcNow - start).TotalSeconds:0.000}s");
-                start = DateTime.UtcNow;
-                Execute(prg, input == null ? Console.OpenStandardInput() : new MemoryStream(input), Console.OpenStandardOutput(), compiled.Count);
-                Console.WriteLine($"Execute: {(DateTime.UtcNow - start).TotalSeconds:0.000}s");
-            }
+            InputStream = input == null ? Console.OpenStandardInput() : new MemoryStream(input);
+            OutputStream = Console.OpenStandardOutput();
+            Console.WriteLine($"Prepare: {(DateTime.UtcNow - _start).TotalSeconds:0.000}s");
+            _startExec = DateTime.UtcNow;
+
+            TheMethod(); // this never returns; see Output(0xDeadDead)
         }
 
         static byte* OutputMethodEntry = null;
@@ -144,18 +112,6 @@ namespace BfFastRoman
                         else
                             throw new Exception();
                     }
-                    assert(*ptr == 0xE8); // call [rel]
-                    ptr++;
-                    int offset3 = *(int*) ptr;
-                    ptr += 4;
-                    byte* method3 = ptr + offset3;
-                    if (method3 != OutputMethodEntry)
-                    {
-                        Console.WriteLine("Expected to find the Output method twice but didn't.");
-                        throw new Exception();
-                    }
-
-                    break;
                 }
                 ptr++;
             }
@@ -168,12 +124,17 @@ namespace BfFastRoman
 
         static Stream InputStream;
         static Stream OutputStream;
+        static byte[] _outputBuffer = new byte[256];
+        static int _outputBufferPos = 0;
 
         [MethodImpl(MethodImplOptions.NoInlining)]
         static uint Input()
         {
             if (InputStream == null) // it's null during initialisation, when we call this method in order to discover where it is, but do not actually want it to execute
                 return 123;
+
+            OutputStream.Write(_outputBuffer, 0, _outputBufferPos);
+            _outputBufferPos = 0;
             var input = InputStream.ReadByte();
             if (input < 0)
                 throw new EndOfStreamException();
@@ -185,7 +146,29 @@ namespace BfFastRoman
         {
             if (OutputStream == null) // it's null during initialisation, when we call this method in order to discover where it is, but do not actually want it to execute
                 return;
+
+            if (value == 0xDeadDead)
+            {
+                // Returning from TheMethod is difficult because the exact clean-up required depends on how the JIT decided
+                // to emit its code (so it may or may not require popping some registers and updating SP to remove the stackframe whose length we also don't deduce).
+                // To save all that trouble, we end the interpreter by exiting via a call to Output(0xDeadDead).
+                OutputStream.Write(_outputBuffer, 0, _outputBufferPos);
+                _outputBufferPos = 0;
+                Console.WriteLine($"Execute: {(DateTime.UtcNow - _startExec).TotalSeconds:0.000}s");
+                Console.WriteLine($"Total: {(DateTime.UtcNow - _start).TotalSeconds:0.000}s");
+                Environment.Exit(0);
+            }
+
+#if DEBUG
             OutputStream.WriteByte(checked((byte) value));
+#else
+            _outputBuffer[_outputBufferPos++] = checked((byte) value);
+            if (_outputBufferPos >= _outputBuffer.Length)
+            {
+                OutputStream.Write(_outputBuffer, 0, _outputBufferPos);
+                _outputBufferPos = 0;
+            }
+#endif
         }
 
         static ulong[] ReadStack()
@@ -234,30 +217,161 @@ namespace BfFastRoman
             var candidates = r1.Where(x => x != 0).ToList();
             if (candidates.Count != 1)
                 return 0; // don't throw here; this might fail on first run due to JIT maybe?
+
+            // Each "dummy" adds 81-83 bytes to this method body (release/debug). We need a bunch of them to fit a large program here.
+            // We could write past the end of this method but as we don't know what's there, we could potentially trample over
+            // something that we're going to use, such as the input/output methods
+            #region Dummy fill code
+            if (DateTime.UtcNow.Ticks == 3) // always false but can't be compile-time eliminated
+            {
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+                Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
+            }
+#endregion
+
             Output(0xDeadFace); // marks the end of the code
             return candidates[0];
         }
 
-        private static void WriteCodeIntoTheMethod()
-        {
-            var codePtr = CodeStart;
-            var label1 = codePtr;
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        static void Dummy(decimal x) { }
 
-            *codePtr++ = 0xB9; // mov ecx, 2F
-            *codePtr++ = 0x2F;
-            *codePtr++ = 0x00;
-            *codePtr++ = 0x00;
-            *codePtr++ = 0x00;
-
-            *codePtr++ = 0xE8;
-            *(int*) codePtr = checked((int) (OutputMethodEntry - (codePtr + 4)));
-            codePtr += 4;
-
-            *codePtr++ = 0xE9;
-            *(int*) codePtr = checked((int) (label1 - (codePtr + 4)));
-            codePtr += 4;
-        }
-
+        private abstract class Instr { }
+        private class LoopInstr : Instr { public List<Instr> Instrs = new List<Instr>(); }
+        private class InputInstr : Instr { }
+        private class OutputInstr : Instr { }
+        private class MoveInstr : Instr { public int Move; }
+        private class AddConstInstr : Instr { public int Add; }
+        private class SetConstInstr : Instr { public int Const; }
+        private class FindZeroInstr : Instr { public int Dist; }
+        private class SumInstr : Instr { public int Dist; }
+        private class AddMultInstr : Instr { public (int dist, int mult)[] Ops; }
 
         static int pos;
 
@@ -268,7 +382,7 @@ namespace BfFastRoman
                 if (p[pos] == '>' || p[pos] == '<')
                 {
                     int moves = 0;
-                    while (pos < p.Length && sbyteFit(moves))
+                    while (pos < p.Length)
                     {
                         if (p[pos] == '+' || p[pos] == '-' || p[pos] == '[' || p[pos] == ']' || p[pos] == '.' || p[pos] == ',')
                             break;
@@ -276,12 +390,12 @@ namespace BfFastRoman
                             moves += p[pos] == '>' ? 1 : -1;
                         pos++;
                     }
-                    yield return new AddMoveInstr { Move = moves };
+                    yield return new MoveInstr { Move = moves };
                 }
                 else if (p[pos] == '+' || p[pos] == '-')
                 {
                     int adds = 0;
-                    while (pos < p.Length && addsFit(adds))
+                    while (pos < p.Length)
                     {
                         if (p[pos] == '>' || p[pos] == '<' || p[pos] == '[' || p[pos] == ']' || p[pos] == '.' || p[pos] == ',')
                             break;
@@ -289,7 +403,7 @@ namespace BfFastRoman
                             adds += p[pos] == '+' ? 1 : -1;
                         pos++;
                     }
-                    yield return new AddMoveInstr { Add = adds };
+                    yield return new AddConstInstr { Add = adds };
                 }
                 else if (p[pos] == '.')
                 {
@@ -319,6 +433,8 @@ namespace BfFastRoman
 
         private static List<Instr> Optimize(List<Instr> input)
         {
+            return input;
+#if false
             var result = new List<Instr>();
             // Merge add-moves
             result = mergeNeighbours<AddMoveInstr, AddMoveInstr>(input, (am1, am2) => (am1.Move == 0 || am2.Add == 0) && addsFit(am1.Add + am2.Add) && sbyteFit(am1.Move + am2.Move), (am1, am2) => new AddMoveInstr { Add = am1.Add + am2.Add, Move = am1.Move + am2.Move });
@@ -332,12 +448,8 @@ namespace BfFastRoman
                         result[i] = new MoveZeroInstr { Move = 0 };
                     else if (lp.Instrs.Count == 1 && lp.Instrs[0] is AddMoveInstr am3 && am3.Add == 0)
                         result[i] = new FindZeroInstr { Dist = am3.Move };
-                    else if (lp.Instrs.Count == 1 && lp.Instrs[0] is AddMoveInstr am2)
-                        result[i] = new AddMoveLoopedInstr { Add = am2.Add, Move = am2.Move };
                     else if (lp.Instrs.Count == 2 && lp.Instrs[0] is AddMoveInstr add1 && lp.Instrs[1] is AddMoveInstr add2 && add1.Add == -1 && add2.Add == 1 && add1.Move == -add2.Move)
                         result[i] = new SumInstr { Dist = add1.Move };
-                    else if (lp.Instrs.Count == 3 && lp.Instrs[0] is AddMoveInstr sam1 && sam1.Add == 0 && lp.Instrs[1] is SumInstr si && lp.Instrs[2] is AddMoveInstr sam2 && sam2.Add == 0)
-                        result[i] = new SumArrInstr { Move1 = sam1.Move, Dist = si.Dist, Move2 = sam2.Move };
                     else if (lp.Instrs.All(i => i is AddMoveInstr))
                     {
                         int ptrOffset = 0;
@@ -356,12 +468,12 @@ namespace BfFastRoman
                     }
                 }
             }
-            // Merge move-zeroes
-            result = mergeNeighbours<AddMoveInstr, MoveZeroInstr>(result, (am, mz) => am.Add == 0 && sbyteFit(am.Move + mz.Move), (am, mz) => new MoveZeroInstr { Move = am.Move + mz.Move });
 
             return result;
+#endif
         }
 
+#if false
         private static List<Instr> mergeNeighbours<T1, T2>(List<Instr> input, Func<T1, T2, bool> canMerge, Func<T1, T2, Instr> doMerge) where T1 : Instr where T2 : Instr
         {
             var result = new List<Instr>();
@@ -385,232 +497,155 @@ namespace BfFastRoman
                 result.Add(last);
             return result;
         }
+#endif
 
-        private static bool addsFit(int adds) => adds > sbyte.MinValue && adds < i_first - 1;
-        private static bool sbyteFit(int moves) => moves > sbyte.MinValue && moves < sbyte.MaxValue;
+        private static byte* _compilePtr;
+        private static byte* _tape;
 
-#if DEBUG
-        private static IEnumerable<Instr> recurse(List<Instr> instrs)
+        private static void CompileIntoTheMethod(List<Instr> prog, int depth)
         {
-            foreach (var instr in instrs)
+            void checkFit(int len) { if (_compilePtr + len - 1 >= CodeEnd) { Console.WriteLine($"Too much x86 machine code; max length is: {CodeEnd - CodeStart:#,0} bytes"); throw new Exception(); } }
+            void add(byte b) { checkFit(1); *_compilePtr++ = b; }
+            void add32(int i32) { checkFit(4); *(int*) _compilePtr = i32; _compilePtr += 4; }
+            void add64(ulong u64) { checkFit(8); *(ulong*) _compilePtr = u64; _compilePtr += 8; }
+
+            void _inc_rdi() { add(0x48); add(0xFF); add(0xC7); }
+            void _dec_rdi() { add(0x48); add(0xFF); add(0xCF); }
+            void _add_rdi_8(int val) { sbyte c = checked((sbyte) val); add(0x48); add(0x83); add(0xC7); add((byte) val); }
+            void _add_rdi_32(int val) { throw new NotImplementedException(); }
+            void _inc_byte_ptr_rdi() { add(0xFE); add(0x07); }
+            void _dec_byte_ptr_rdi() { add(0xFE); add(0x0F); }
+            void _add_byte_ptr_rdi_8(int val) { add(0x80); add(0x07); add(unchecked((byte) val)); }
+            void _movzx_ecx_byte_ptr_rdi() { add(0x0F); add(0xB6); add(0x0F); }
+            void _mov_byte_ptr_rdi_al() { add(0x88); add(0x07); }
+            void _cmp_byte_ptr_rdi(byte val) { add(0x80); add(0x3F); add(val); }
+            void _mov_rax_s32(int val) { add(0x48); add(0xC7); add(0xC0); add32(val); }
+            void _mov_rcx_s32(int val) { add(0x48); add(0xC7); add(0xC1); add32(val); }
+            void _mov_rdi_64(ulong val) { add(0x48); add(0xBF); add64((ulong) _tape); }
+
+            void _helper_add_rdi(int val)
             {
-                yield return instr;
-                if (instr is LoopInstr lp)
-                    foreach (var i in recurse(lp.Instrs))
-                        yield return i;
+                if (val == 0)
+                { /* nothing */ }
+                else if (val == 1)
+                    _inc_rdi();
+                else if (val == -1)
+                    _dec_rdi();
+                else if (val >= -128 && val <= 127)
+                    _add_rdi_8(val);
+                else
+                    _add_rdi_32(val);
             }
-        }
-#endif
-
-        private abstract class Instr
-        {
-#if DEBUG
-            public int CompiledPos; public double Heat;
-            protected ConsoleColor HeatColor => Heat == 0 ? ConsoleColor.Gray : Heat < 0.1 ? ConsoleColor.White : Heat < 0.5 ? ConsoleColor.Cyan : ConsoleColor.Magenta;
-            public virtual ConsoleColoredString ToColoredString(int depth) => ToString().Color(HeatColor);
-            protected static string Ω(int amount, char pos, char neg) => new string(amount > 0 ? pos : neg, Math.Abs(amount));
-#endif
-        }
-        private class InputInstr : Instr
-        {
-#if DEBUG
-            public override string ToString() => ",";
-#endif
-        }
-        private class OutputInstr : Instr
-        {
-#if DEBUG
-            public override string ToString() => ".";
-#endif
-        }
-        private class AddMoveInstr : Instr
-        {
-            public int Add, Move;
-#if DEBUG
-            public override string ToString() => Ω(Add, '+', '-') + Ω(Move, '>', '<');
-            public override ConsoleColoredString ToColoredString(int depth) => $"A{Add}M{Move}".Color(HeatColor);
-#endif
-        }
-        private class AddMoveLoopedInstr : Instr
-        {
-            public int Add, Move;
-#if DEBUG
-            public override string ToString() => "[" + Ω(Add, '+', '-') + Ω(Move, '>', '<') + "]";
-            public override ConsoleColoredString ToColoredString(int depth) => $"{{A{Add}M{Move}}}".Color(HeatColor);
-#endif
-        }
-        private class FindZeroInstr : Instr
-        {
-            public int Dist;
-#if DEBUG
-            public override string ToString() => "[" + Ω(Dist, '>', '<') + "]";
-            public override ConsoleColoredString ToColoredString(int depth) => $"{{FindZ{Dist}}}".Color(HeatColor);
-#endif
-        }
-        private class SumInstr : Instr
-        {
-            public int Dist;
-#if DEBUG
-            public override string ToString() => "[-" + Ω(Dist, '>', '<') + "+" + (Dist > 0 ? new string('<', Dist) : new string('>', -Dist)) + "]";
-            public override ConsoleColoredString ToColoredString(int depth) => $"(Sum{Dist})".Color(HeatColor);
-#endif
-        }
-        private class AddMultInstr : Instr
-        {
-            public (int dist, int mult)[] Ops;
-#if DEBUG
-            public override string ToString() => "[-" + Ops.Select(t => Ω(t.dist, '>', '<') + Ω(t.mult, '+', '-')).JoinString() + Ω(-Ops.Sum(x => x.dist), '>', '<') + "]";
-            public override ConsoleColoredString ToColoredString(int depth) => $"(AddMul{Ops.Length})".Color(HeatColor);
-#endif
-        }
-        private class SumArrInstr : Instr
-        {
-            public int Move1, Dist, Move2;
-#if DEBUG
-            public override string ToString() => "[" + Ω(Move1, '>', '<') + "[-" + Ω(Dist, '>', '<') + "+" + Ω(Dist, '<', '>') + "]" + Ω(Move2, '>', '<') + "]";
-            public override ConsoleColoredString ToColoredString(int depth) => $"[M{Move1}Sum{Dist}M{Move2}]".Color(HeatColor);
-#endif
-        }
-        private class LoopInstr : Instr
-        {
-            public List<Instr> Instrs = new List<Instr>();
-#if DEBUG
-            public override string ToString() => "[" + string.Join("", Instrs.Select(s => s.ToString())) + "]";
-            public override ConsoleColoredString ToColoredString(int depth) => "\n" + new string(' ', depth * 2) + "[".Color(HeatColor) + Instrs.Select(i => i.ToColoredString(depth + 1)).JoinColoredString() + "]\n".Color(HeatColor) + new string(' ', depth * 2);
-#endif
-        }
-        private class MoveZeroInstr : Instr
-        {
-            public int Move;
-#if DEBUG
-            public override string ToString() => Ω(Move, '>', '<') + "[-]";
-            public override ConsoleColoredString ToColoredString(int depth) => $"(Z{Move})".Color(HeatColor);
-#endif
-        }
-
-        private const sbyte i_first = 100;
-        private const sbyte i_fwdJumpShort = 101;
-        private const sbyte i_fwdJumpLong = 102;
-        private const sbyte i_bckJumpShort = 103;
-        private const sbyte i_bckJumpLong = 104;
-        private const sbyte i_output = 105;
-        private const sbyte i_input = 106;
-        private const sbyte i_moveZero = 107;
-        private const sbyte i_addMoveLooped = 108;
-        private const sbyte i_sum = 109;
-        private const sbyte i_findZero = 110;
-        private const sbyte i_sumArr = 112;
-        private const sbyte i_addMult = 113;
-        private const sbyte i_addMult1 = 114;
-        private const sbyte i_addMult2 = 115;
-        private const sbyte i_end = 122;
-
-        private static List<sbyte> Compile(List<Instr> prog)
-        {
-            var result = new List<sbyte>();
-            void addUshort(int val)
+            void _helper_add_byte_ptr_rdi(int val)
             {
-                ushort v = checked((ushort) val);
-                result.Add((sbyte) (v & 0xFF));
-                result.Add((sbyte) (v >> 8));
+                var adds = val & 0xFF; // +257 = +1 and we want the "inc byte ptr [rdi]" in this case
+                if (adds == 0)
+                { /* nothing */ }
+                else if (adds == 1)
+                    _inc_byte_ptr_rdi();
+                else if (adds == 0xFF)
+                    _dec_byte_ptr_rdi();
+                else
+                    _add_byte_ptr_rdi_8(adds);
             }
+            void _helper_call(byte* target)
+            {
+                add(0xE8);
+                add32(checked((int) (target - (_compilePtr + 4)))); // signed offset relative to after this call instruction location
+            }
+
+            // rdi is tape pointer
+            // ecx is used to pass the 32-bit int sent into OutputMethod
+            // eax is used to pass the 32-bit int returned by InputMethod
+
+            if (depth == 0)
+            {
+                // This compile method is recursive; but this is the very first invocation. Alloc the tape and save the pointer in rdi
+                _tape = (byte*) Marshal.AllocHGlobal(30_000);
+                if (_tape == null)
+                    throw new Exception();
+                _mov_rdi_64((ulong) _tape);
+                _mov_rcx_s32(30_000 / 8);
+                _mov_rax_s32(0);
+                add(0xF3); add(0x48); add(0xAB); // rep stos [rdi], rax
+                _tape += 15_000;
+                _mov_rdi_64((ulong) _tape);
+            }
+
             foreach (var instr in prog)
             {
-#if DEBUG
-                instr.CompiledPos = result.Count;
-#endif
-                if (instr is AddMoveInstr am)
+                if (instr is MoveInstr m)
                 {
-                    if (am.Add < sbyte.MinValue || am.Add >= i_first)
-                        throw new Exception();
-                    result.Add((sbyte) am.Add);
-                    result.Add(checked((sbyte) am.Move));
+                    _helper_add_rdi(m.Move);
                 }
-                else if (instr is AddMoveLoopedInstr am2)
+                else if (instr is AddConstInstr a)
                 {
-                    result.Add(i_addMoveLooped);
-                    result.Add(checked((sbyte) am2.Add));
-                    result.Add(checked((sbyte) am2.Move));
+                    _helper_add_byte_ptr_rdi(a.Add);
                 }
-                else if (instr is MoveZeroInstr mz)
-                {
-                    result.Add(i_moveZero);
-                    result.Add(checked((sbyte) mz.Move));
-                }
-                else if (instr is SumInstr sm)
-                {
-                    result.Add(i_sum);
-                    result.Add(checked((sbyte) sm.Dist));
-                }
-                else if (instr is SumArrInstr sma)
-                {
-                    result.Add(i_sumArr);
-                    result.Add(checked((sbyte) sma.Move1));
-                    result.Add(checked((sbyte) sma.Dist));
-                    result.Add(checked((sbyte) sma.Move2));
-                }
-                else if (instr is AddMultInstr amul)
-                {
-                    if (amul.Ops.Length == 1)
-                        result.Add(i_addMult1);
-                    else if (amul.Ops.Length == 2)
-                        result.Add(i_addMult2);
-                    else
-                    {
-                        result.Add(i_addMult);
-                        result.Add(checked((sbyte) amul.Ops.Length));
-                    }
-                    var total = 0;
-                    foreach (var op in amul.Ops)
-                    {
-                        total += op.dist;
-                        result.Add(checked((sbyte) total));
-                        result.Add(checked((sbyte) op.mult));
-                    }
-                }
-                else if (instr is FindZeroInstr fz)
-                {
-                    result.Add(i_findZero);
-                    result.Add(checked((sbyte) fz.Dist));
-                }
+                //else if (instr is SetConstInstr mz)
+                //{
+                //    result.Add(i_moveZero);
+                //    result.Add(checked((sbyte) mz.Move));
+                //}
+                //else if (instr is SumInstr sm)
+                //{
+                //    result.Add(i_sum);
+                //    result.Add(checked((sbyte) sm.Dist));
+                //}
+                //else if (instr is AddMultInstr amul)
+                //{
+                //    result.Add(i_addMult);
+                //    result.Add(checked((sbyte) amul.Ops.Length));
+                //    var total = 0;
+                //    foreach (var op in amul.Ops)
+                //    {
+                //        total += op.dist;
+                //        result.Add(checked((sbyte) total));
+                //        result.Add(checked((sbyte) op.mult));
+                //    }
+                //}
+                //else if (instr is FindZeroInstr fz)
+                //{
+                //    result.Add(i_findZero);
+                //    result.Add(checked((sbyte) fz.Dist));
+                //}
                 else if (instr is LoopInstr lp)
                 {
-                    var body = Compile(lp.Instrs);
-                    if (body.Count < 255)
-                    {
-                        result.Add(i_fwdJumpShort);
-                        result.Add((sbyte) checked((byte) (body.Count - 0)));
-#if DEBUG
-                        foreach (var sub in recurse(lp.Instrs))
-                            sub.CompiledPos += result.Count;
-#endif
-                        result.AddRange(body);
-                        result.Add(i_bckJumpShort);
-                        result.Add((sbyte) checked((byte) (body.Count + 2)));
-                    }
-                    else
-                    {
-                        result.Add(i_fwdJumpLong);
-                        addUshort(body.Count - 1);
-#if DEBUG
-                        foreach (var sub in recurse(lp.Instrs))
-                            sub.CompiledPos += result.Count;
-#endif
-                        result.AddRange(body);
-                        result.Add(i_bckJumpLong);
-                        addUshort(body.Count + 4);
-                    }
+                    var loopStartPtr = _compilePtr;
+                    _cmp_byte_ptr_rdi(0);
+                    add(0x0F); add(0x84); // jz rel32
+                    add32(0x00000000); // placeholder
+                    var fwdJumpRelPtr = _compilePtr;
+
+                    CompileIntoTheMethod(lp.Instrs, depth + 1);
+
+                    add(0xE9); // jmp rel32
+                    add32(checked((int) (loopStartPtr - (_compilePtr + 4))));
+                    *(int*) (fwdJumpRelPtr - 4) = checked((int) (_compilePtr - fwdJumpRelPtr));
                 }
                 else if (instr is OutputInstr)
-                    result.Add(i_output);
+                {
+                    _movzx_ecx_byte_ptr_rdi();
+                    _helper_call(OutputMethodEntry);
+                }
                 else if (instr is InputInstr)
-                    result.Add(i_input);
+                {
+                    _helper_call(InputMethodEntry);
+                    _mov_byte_ptr_rdi_al();
+                }
                 else
                     throw new Exception();
             }
-            return result;
+
+            if (depth == 0)
+            {
+                // This compile method is recursive; but this is the very end of it. End execution (see Output for details)
+                _mov_rcx_s32(unchecked((int) 0xDeadDead));
+                _helper_call(OutputMethodEntry);
+            }
         }
 
+#if false
         private unsafe static void Execute(sbyte* program, Stream input, Stream output, int progLen)
         {
             var tapeLen = 30_000;
@@ -618,26 +653,9 @@ namespace BfFastRoman
             var tapeStart = tape;
             var tapeEnd = tape + tapeLen; // todo: wrap around
             tape += tapeLen / 2;
-#if DEBUG
-            var progStart = program;
-            var progEnd = program + progLen;
-            uint[] heatmap = new uint[10000];
-#endif
-            var outputBuffer = new List<byte>();
-            void flushOutput()
-            {
-                output.Write(outputBuffer.ToArray());
-                outputBuffer.Clear();
-            }
 
             while (true)
             {
-#if DEBUG
-                if (tape < tapeStart || tape >= tapeEnd) throw new Exception();
-                if (program < progStart || program >= progEnd) throw new Exception();
-                checked { heatmap[program - progStart]++; }
-#endif
-
                 sbyte a = *(program++);
                 switch (a)
                 {
@@ -695,54 +713,6 @@ namespace BfFastRoman
                         }
                         break;
 
-                    case i_addMoveLooped:
-                        {
-                            sbyte add = *(program++);
-                            sbyte move = *(program++);
-                            while (*tape != 0)
-                            {
-                                *tape += add;
-                                tape += move;
-                            }
-                        }
-                        break;
-
-                    case i_sumArr:
-                        {
-                            sbyte move1 = *(program++);
-                            sbyte dist = *(program++);
-                            sbyte move2 = *(program++);
-                            while (*tape != 0)
-                            {
-                                tape += move1;
-                                *(tape + dist) += *tape;
-                                *tape = 0;
-                                tape += move2;
-                            }
-                        }
-                        break;
-
-                    case i_addMult1:
-                        {
-                            sbyte dist = *(program++);
-                            sbyte mult = *(program++);
-                            *(tape + dist) += (sbyte) (mult * *tape);
-                            *tape = 0;
-                        }
-                        break;
-
-                    case i_addMult2:
-                        {
-                            sbyte dist = *(program++);
-                            sbyte mult = *(program++);
-                            *(tape + dist) += (sbyte) (mult * *tape);
-                            dist = *(program++);
-                            mult = *(program++);
-                            *(tape + dist) += (sbyte) (mult * *tape);
-                            *tape = 0;
-                        }
-                        break;
-
                     case i_addMult:
                         {
                             sbyte num = *(program++);
@@ -757,7 +727,6 @@ namespace BfFastRoman
                         break;
 
                     case i_input:
-                        flushOutput();
                         var b = input.ReadByte();
                         if (b < 0)
                             throw new EndOfStreamException();
@@ -765,30 +734,19 @@ namespace BfFastRoman
                         break;
 
                     case i_output:
-#if DEBUG
                         output.WriteByte(*(byte*) tape);
-#else
-                        outputBuffer.Add(*(byte*) tape);
-#endif
                         break;
 
                     case i_end:
-                        flushOutput();
-#if DEBUG
-                        File.WriteAllText(Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location), "heatmap.txt"), string.Join(",", heatmap.Take(progLen)));
-#endif
                         return;
 
                     default:
-#if DEBUG
-                        if (a >= i_first)
-                            throw new Exception();
-#endif
                         *tape += a; // add
                         tape += *(program++); // move
                         break;
                 }
             }
         }
+#endif
     }
 }
