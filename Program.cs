@@ -144,7 +144,7 @@ namespace BfFastRoman
             }
 
 #if DEBUG
-            OutputStream.WriteByte(checked((byte) value));
+            _outputStream.WriteByte(checked((byte) value));
 #else
             _outputBuffer[_outputBufferPos++] = checked((byte) value);
             if (_outputBufferPos >= _outputBuffer.Length)
@@ -516,7 +516,7 @@ namespace BfFastRoman
         private static byte* _compilePtr;
         private static byte* _tape;
 
-        static void checkFit(int len) { if (_compilePtr + len - 1 >= _codeEnd) { Console.WriteLine($"Too much x86 machine code; max length is: {_codeEnd - _codeStart:#,0} bytes"); throw new Exception(); } }
+        static void checkFit(int len) { if (_compilePtr + len > _codeEnd) { Console.WriteLine($"Too much x86 machine code; max length is: {_codeEnd - _codeStart:#,0} bytes"); throw new Exception(); } }
         static void add(byte b) { checkFit(1); *_compilePtr++ = b; }
         static void add8(sbyte b) { add((byte) b); }
         static void add32(int i32) { checkFit(4); *(int*) _compilePtr = i32; _compilePtr += 4; }
@@ -548,9 +548,14 @@ namespace BfFastRoman
         static void _mov_rdi_64(ulong val) { add(0x48); add(0xBF); add64((ulong) _tape); }
         static void _je_8(long dist) { add(0x74); add((byte) checked((sbyte) dist)); }
         static sbyte* _je_8() { add(0x74); sbyte* placeholder = (sbyte*) _compilePtr; add(0); return placeholder; }
+        static int* _je_32() { add(0x0F); add(0x84); int* placeholder = (int*) _compilePtr; add32(0); return placeholder; }
         static void _jne_8(long dist) { add(0x75); add((byte) checked((sbyte) dist)); }
         static void _jne_8(byte* target) { _jne_8(target - (_compilePtr + 2)); }
         static sbyte* _jne_8() { add(0x75); sbyte* placeholder = (sbyte*) _compilePtr; add(0); return placeholder; }
+        static void _jne_32(long dist) { add(0x0F); add(0x85); add32(checked((int) dist)); }
+        static void _jne_32(byte* target) { _jne_32(target - (_compilePtr + 6)); }
+        static void _jne(long dist) { if (dist >= -128 && dist <= 127) _jne_8(dist); else _jne_32(dist); }
+        static void _jne(byte* target) { var shortDist = target - (_compilePtr + 2); if (shortDist >= -128 && shortDist <= 127) _jne_8(shortDist); else _jne_32(target); }
         static void _jmp_8(byte* target) { add(0xEB); add8(checked((sbyte) (target - (_compilePtr + 1)))); }
         static void _call_32(byte* target) { add(0xE8); add32(checked((int) (target - (_compilePtr + 4)))); }
 
@@ -657,17 +662,15 @@ namespace BfFastRoman
                 }
                 else if (instr is LoopInstr lp)
                 {
-                    var loopStartPtr = _compilePtr;
                     _cmp_byte_ptr_rdi(0);
-                    add(0x0F); add(0x84); // jz rel32
-                    add32(0x00000000); // placeholder
-                    var fwdJumpRelPtr = _compilePtr;
+                    var jmpDistPtr = _je_32();
 
+                    var label = _compilePtr;
                     CompileIntoTheMethod(lp.Instrs, depth + 1);
+                    _cmp_byte_ptr_rdi(0);
+                    _jne(label);
 
-                    add(0xE9); // jmp rel32
-                    add32(checked((int) (loopStartPtr - (_compilePtr + 4))));
-                    *(int*) (fwdJumpRelPtr - 4) = checked((int) (_compilePtr - fwdJumpRelPtr));
+                    *jmpDistPtr = checked((int) (_compilePtr - (byte*) (jmpDistPtr + 1)));
                 }
                 else if (instr is OutputInstr)
                 {
