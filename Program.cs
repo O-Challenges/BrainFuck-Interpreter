@@ -22,32 +22,31 @@ namespace BfFastRoman
             if (args.Length >= 2)
                 input = File.Exists(args[1]) ? File.ReadAllBytes(args[1]) : Encoding.UTF8.GetBytes(args[1] + '\n');
 
-            pos = 0;
             var parsed = Parse(code).ToList();
             var optimized = Optimize(parsed);
 
             DiscoverCodeLocations();
-            _compilePtr = CodeStart;
+            _compilePtr = _codeStart;
             CompileIntoTheMethod(optimized, 0);
 
-            InputStream = input == null ? Console.OpenStandardInput() : new MemoryStream(input);
-            OutputStream = Console.OpenStandardOutput();
+            _inputStream = input == null ? Console.OpenStandardInput() : new MemoryStream(input);
+            _outputStream = Console.OpenStandardOutput();
             Console.WriteLine($"Prepare: {(DateTime.UtcNow - _start).TotalSeconds:0.000}s");
             _startExec = DateTime.UtcNow;
 
             TheMethod(); // this never returns; see Output(0xDeadDead)
         }
 
-        static byte* OutputMethodEntry = null;
-        static byte* InputMethodEntry = null;
-        static byte* CodeStart = null; // the first byte in TheMethod that is safely writable; this points to right after the first ReadStack call returns
-        static byte* CodeEnd = null; // the first byte in TheMethod that is no longer safely writable
+        static byte* _outputMethodEntry = null;
+        static byte* _inputMethodEntry = null;
+        static byte* _codeStart = null; // the first byte in TheMethod that is safely writable; this points to right after the first ReadStack call returns
+        static byte* _codeEnd = null; // the first byte in TheMethod that is no longer safely writable
 
         private static void DiscoverCodeLocations()
         {
             TheMethod(); // discard first call in case of JIT etc
-            CodeStart = (byte*) TheMethod();
-            if (CodeStart == null)
+            _codeStart = (byte*) TheMethod();
+            if (_codeStart == null)
             {
                 Console.WriteLine("Unable to locate TheMethod");
                 throw new Exception();
@@ -55,13 +54,13 @@ namespace BfFastRoman
 
             // Search through TheMethod to find input and output methods
             void assert(bool v) { if (!v) throw new Exception(); }
-            var ptr = CodeStart;
+            var ptr = _codeStart;
             while (true)
             {
                 if (*(uint*) ptr == 0xDeadFace)
                 {
                     ptr += 4;
-                    CodeEnd = ptr;
+                    _codeEnd = ptr;
                     break;
                 }
                 if (*(uint*) ptr == 0xBeefCafe)
@@ -81,9 +80,6 @@ namespace BfFastRoman
                     // e8 b3 9c ff ff          call   0xffffffffffff9cbd
                     // 90                      nop
                     // e8 a5 9c ff ff          call   0xffffffffffff9cb5
-                    // 89 45 74                mov    DWORD PTR [rbp+0x74],eax
-                    // 8b 4d 74                mov    ecx,DWORD PTR [rbp+0x74]
-                    // e8 a2 9c ff ff          call   0xffffffffffff9cbd
 
                     ptr--;
                     assert(*ptr == 0xB9); // mov ecx, u32
@@ -92,50 +88,38 @@ namespace BfFastRoman
                     ptr++;
                     int offset1 = *(int*) ptr;
                     ptr += 4;
-                    OutputMethodEntry = ptr + offset1;
-                    if (*ptr == 0x90)
+                    _outputMethodEntry = ptr + offset1;
+                    if (*ptr == 0x90) // nop in debug mode
                         ptr++;
                     assert(*ptr == 0xE8); // call [rel]
                     ptr++;
                     int offset2 = *(int*) ptr;
                     ptr += 4;
-                    InputMethodEntry = ptr + offset2;
-                    if (*ptr == 0x89)
-                        ptr += 3;
-                    if (*ptr == 0x8B)
-                    {
-                        ptr++;
-                        if (*ptr == 0xC8)
-                            ptr++;
-                        else if (*ptr == 0x4D)
-                            ptr += 2;
-                        else
-                            throw new Exception();
-                    }
+                    _inputMethodEntry = ptr + offset2;
                 }
                 ptr++;
             }
-            if (InputMethodEntry == null || OutputMethodEntry == null)
+            if (_inputMethodEntry == null || _outputMethodEntry == null)
             {
                 Console.WriteLine("Could not find the Input or the Output method entry points.");
                 throw new Exception();
             }
         }
 
-        static Stream InputStream;
-        static Stream OutputStream;
+        static Stream _inputStream;
+        static Stream _outputStream;
         static byte[] _outputBuffer = new byte[256];
         static int _outputBufferPos = 0;
 
         [MethodImpl(MethodImplOptions.NoInlining)]
         static uint Input()
         {
-            if (InputStream == null) // it's null during initialisation, when we call this method in order to discover where it is, but do not actually want it to execute
+            if (_inputStream == null) // it's null during initialisation, when we call this method in order to discover where it is, but do not actually want it to execute
                 return 123;
 
-            OutputStream.Write(_outputBuffer, 0, _outputBufferPos);
+            _outputStream.Write(_outputBuffer, 0, _outputBufferPos);
             _outputBufferPos = 0;
-            var input = InputStream.ReadByte();
+            var input = _inputStream.ReadByte();
             if (input < 0)
                 throw new EndOfStreamException();
             return (uint) input;
@@ -144,7 +128,7 @@ namespace BfFastRoman
         [MethodImpl(MethodImplOptions.NoInlining)]
         static void Output(uint value)
         {
-            if (OutputStream == null) // it's null during initialisation, when we call this method in order to discover where it is, but do not actually want it to execute
+            if (_outputStream == null) // it's null during initialisation, when we call this method in order to discover where it is, but do not actually want it to execute
                 return;
 
             if (value == 0xDeadDead)
@@ -152,7 +136,7 @@ namespace BfFastRoman
                 // Returning from TheMethod is difficult because the exact clean-up required depends on how the JIT decided
                 // to emit its code (so it may or may not require popping some registers and updating SP to remove the stackframe whose length we also don't deduce).
                 // To save all that trouble, we end the interpreter by exiting via a call to Output(0xDeadDead).
-                OutputStream.Write(_outputBuffer, 0, _outputBufferPos);
+                _outputStream.Write(_outputBuffer, 0, _outputBufferPos);
                 _outputBufferPos = 0;
                 Console.WriteLine($"Execute: {(DateTime.UtcNow - _startExec).TotalSeconds:0.000}s");
                 Console.WriteLine($"Total: {(DateTime.UtcNow - _start).TotalSeconds:0.000}s");
@@ -165,7 +149,7 @@ namespace BfFastRoman
             _outputBuffer[_outputBufferPos++] = checked((byte) value);
             if (_outputBufferPos >= _outputBuffer.Length)
             {
-                OutputStream.Write(_outputBuffer, 0, _outputBufferPos);
+                _outputStream.Write(_outputBuffer, 0, _outputBufferPos);
                 _outputBufferPos = 0;
             }
 #endif
@@ -405,10 +389,9 @@ namespace BfFastRoman
         private class AddConstInstr : Instr { public int Add; }
         private class SetConstInstr : Instr { public int Const; }
         private class FindZeroInstr : Instr { public int Step; }
-        //private class AddToInstr : Instr { public int Dist; }
         private class AddMultInstr : Instr { public (int dist, int mult)[] Ops; }
 
-        static int pos;
+        static int pos = 0;
 
         private static IEnumerable<Instr> Parse(string p)
         {
@@ -533,7 +516,7 @@ namespace BfFastRoman
         private static byte* _compilePtr;
         private static byte* _tape;
 
-        static void checkFit(int len) { if (_compilePtr + len - 1 >= CodeEnd) { Console.WriteLine($"Too much x86 machine code; max length is: {CodeEnd - CodeStart:#,0} bytes"); throw new Exception(); } }
+        static void checkFit(int len) { if (_compilePtr + len - 1 >= _codeEnd) { Console.WriteLine($"Too much x86 machine code; max length is: {_codeEnd - _codeStart:#,0} bytes"); throw new Exception(); } }
         static void add(byte b) { checkFit(1); *_compilePtr++ = b; }
         static void add8(sbyte b) { add((byte) b); }
         static void add32(int i32) { checkFit(4); *(int*) _compilePtr = i32; _compilePtr += 4; }
@@ -689,11 +672,11 @@ namespace BfFastRoman
                 else if (instr is OutputInstr)
                 {
                     _movzx_ecx_byte_ptr_rdi();
-                    _call_32(OutputMethodEntry);
+                    _call_32(_outputMethodEntry);
                 }
                 else if (instr is InputInstr)
                 {
-                    _call_32(InputMethodEntry);
+                    _call_32(_inputMethodEntry);
                     _mov_byte_ptr_rdi_al();
                 }
                 else
@@ -704,7 +687,7 @@ namespace BfFastRoman
             {
                 // This compile method is recursive; but this is the very end of it. End execution (see Output for details)
                 _mov_rcx_s32(unchecked((int) 0xDeadDead));
-                _call_32(OutputMethodEntry);
+                _call_32(_outputMethodEntry);
             }
         }
     }
