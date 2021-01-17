@@ -132,8 +132,8 @@ namespace BfFastRoman
                 if (result[i] is LoopInstr lp)
                 {
                     lp.Instrs = Optimize(lp.Instrs);
-                    if (lp.Instrs.Count == 1 && lp.Instrs[0] is AddMoveInstr am && am.Add == -1 && am.Move == 0)
-                        result[i] = new MoveZeroInstr { Move = 0 };
+                    if (lp.Instrs.Count == 1 && lp.Instrs[0] is AddMoveInstr am && am.Add == -1)
+                        result[i] = new MoveZeroInstr { Move = am.Move };
                     else if (lp.Instrs.Count == 1 && lp.Instrs[0] is AddMoveInstr am3 && am3.Add == 0)
                         result[i] = new FindZeroInstr { Dist = am3.Move };
                     else if (lp.Instrs.Count == 1 && lp.Instrs[0] is AddMoveInstr am2)
