@@ -1,0 +1,12 @@
+        static void _mov_al_byte_ptr_rdi() { add(0x8A); add(0x07); }
+        static void _mov_cl_byte_ptr_rdi() { add(0x8A); add(0x0F); }
+
+        static void _mov_byte_ptr_rdi_offset8_al(int offset) { add(0x88); add(0x47); add8(checked((sbyte) offset)); }
+        static void _mov_byte_ptr_rdi_offset32_al(int offset) { add(0x88); add(0x87); add32(offset); }
+        static void _mov_byte_ptr_rdi_offset_al(int val) { if (val >= -128 && val <= 127) _mov_byte_ptr_rdi_offset8_al(val); else _mov_byte_ptr_rdi_offset32_al(val); }
+
+        static void _je_8(long dist) { add(0x74); add((byte) checked((sbyte) dist)); }
+        static sbyte* _jne_8() { add(0x75); sbyte* placeholder = (sbyte*) _compilePtr; add(0); return placeholder; }
+
+        static void _jne(long dist) { if (dist >= -128 && dist <= 127) _jne_8(dist); else _jne_32(dist); }
+        static void _jmp_8(byte* target) { add(0xEB); add8(checked((sbyte) (target - (_compilePtr + 1)))); }

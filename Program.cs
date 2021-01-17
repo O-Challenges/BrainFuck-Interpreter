@@ -524,66 +524,32 @@ namespace BfFastRoman
 
         static void _inc_rdi() { add(0x48); add(0xFF); add(0xC7); }
         static void _dec_rdi() { add(0x48); add(0xFF); add(0xCF); }
-        static void _add_rdi_8(int val) { sbyte c = checked((sbyte) val); add(0x48); add(0x83); add(0xC7); add((byte) val); }
-        static void _add_rdi_32(int val) { throw new NotImplementedException(); }
+        static void _add_rdi_8(int val) { add(0x48); add(0x83); add(0xC7); add((byte) val); }
+        static void _add_rdi_32(int val) { add(0x48); add(0x81); add(0xC7); add32(val); }
+        static void _add_rdi(int val) { if (val == 1) _inc_rdi(); else if (val == -1) _dec_rdi(); else if (val >= -128 && val <= 127) _add_rdi_8(val); else if (val != 0) _add_rdi_32(val); }
         static void _inc_byte_ptr_rdi() { add(0xFE); add(0x07); }
         static void _dec_byte_ptr_rdi() { add(0xFE); add(0x0F); }
         static void _add_byte_ptr_rdi_8(int val) { add(0x80); add(0x07); add(unchecked((byte) val)); }
-        static void _mov_al_byte_ptr_rdi() { add(0x8A); add(0x07); }
-        static void _mov_cl_byte_ptr_rdi() { add(0x8A); add(0x0F); }
         static void _movzx_eax_byte_ptr_rdi() { add(0x0F); add(0xB6); add(0x07); }
         static void _movzx_ecx_byte_ptr_rdi() { add(0x0F); add(0xB6); add(0x0F); }
         static void _mov_byte_ptr_rdi_al() { add(0x88); add(0x07); }
         static void _mov_byte_ptr_rdi_8(int val) { add(0xC6); add(0x07); add(unchecked((byte) val)); }
-        static void _mov_byte_ptr_rdi_offset8_al(int offset) { add(0x88); add(0x47); add8(checked((sbyte) offset)); }
-        static void _mov_byte_ptr_rdi_offset32_al(int offset) { add(0x88); add(0x87); add32(offset); }
-        static void _mov_byte_ptr_rdi_offset_al(int val) { if (val >= -128 && val <= 127) _mov_byte_ptr_rdi_offset8_al(val); else _mov_byte_ptr_rdi_offset32_al(val); }
         static void _add_byte_ptr_rdi_offset8_al(int offset) { add(0x00); add(0x47); add8(checked((sbyte) offset)); }
         static void _add_byte_ptr_rdi_offset32_al(int offset) { add(0x00); add(0x87); add32(offset); }
-        static void _add_byte_ptr_rdi_offset_al(int val) { if (val >= -128 && val <= 127) _mov_byte_ptr_rdi_offset8_al(val); else _mov_byte_ptr_rdi_offset32_al(val); }
+        static void _add_byte_ptr_rdi_offset_al(int val) { if (val >= -128 && val <= 127) _add_byte_ptr_rdi_offset8_al(val); else _add_byte_ptr_rdi_offset32_al(val); }
         static void _cmp_byte_ptr_rdi(byte val) { add(0x80); add(0x3F); add(val); }
         static void _mov_ecx_32(int val) { add(0xB9); add32(val); }
         static void _mov_rax_s32(int val) { add(0x48); add(0xC7); add(0xC0); add32(val); }
         static void _mov_rcx_s32(int val) { add(0x48); add(0xC7); add(0xC1); add32(val); }
-        static void _mov_rdi_64(ulong val) { add(0x48); add(0xBF); add64((ulong) _tape); }
-        static void _je_8(long dist) { add(0x74); add((byte) checked((sbyte) dist)); }
+        static void _mov_rdi_64(ulong val) { add(0x48); add(0xBF); add64(val); }
         static sbyte* _je_8() { add(0x74); sbyte* placeholder = (sbyte*) _compilePtr; add(0); return placeholder; }
         static int* _je_32() { add(0x0F); add(0x84); int* placeholder = (int*) _compilePtr; add32(0); return placeholder; }
         static void _jne_8(long dist) { add(0x75); add((byte) checked((sbyte) dist)); }
         static void _jne_8(byte* target) { _jne_8(target - (_compilePtr + 2)); }
-        static sbyte* _jne_8() { add(0x75); sbyte* placeholder = (sbyte*) _compilePtr; add(0); return placeholder; }
         static void _jne_32(long dist) { add(0x0F); add(0x85); add32(checked((int) dist)); }
         static void _jne_32(byte* target) { _jne_32(target - (_compilePtr + 6)); }
-        static void _jne(long dist) { if (dist >= -128 && dist <= 127) _jne_8(dist); else _jne_32(dist); }
         static void _jne(byte* target) { var shortDist = target - (_compilePtr + 2); if (shortDist >= -128 && shortDist <= 127) _jne_8(shortDist); else _jne_32(target); }
-        static void _jmp_8(byte* target) { add(0xEB); add8(checked((sbyte) (target - (_compilePtr + 1)))); }
         static void _call_32(byte* target) { add(0xE8); add32(checked((int) (target - (_compilePtr + 4)))); }
-
-        static void _helper_add_rdi(int val)
-        {
-            if (val == 0)
-            { /* nothing */ }
-            else if (val == 1)
-                _inc_rdi();
-            else if (val == -1)
-                _dec_rdi();
-            else if (val >= -128 && val <= 127)
-                _add_rdi_8(val);
-            else
-                _add_rdi_32(val);
-        }
-        static void _helper_add_byte_ptr_rdi(int val)
-        {
-            var adds = val & 0xFF; // +257 = +1 and we want the "inc byte ptr [rdi]" in this case
-            if (adds == 0)
-            { /* nothing */ }
-            else if (adds == 1)
-                _inc_byte_ptr_rdi();
-            else if (adds == 0xFF)
-                _dec_byte_ptr_rdi();
-            else
-                _add_byte_ptr_rdi_8(adds);
-        }
 
         private static void CompileIntoTheMethod(List<Instr> prog, int depth)
         {
@@ -609,11 +575,17 @@ namespace BfFastRoman
             {
                 if (instr is MoveInstr m)
                 {
-                    _helper_add_rdi(m.Move);
+                    _add_rdi(m.Move);
                 }
                 else if (instr is AddConstInstr a)
                 {
-                    _helper_add_byte_ptr_rdi(a.Add);
+                    var adds = a.Add & 0xFF; // +257 = +1 and we want the "inc byte ptr [rdi]" in this case
+                    if (adds == 1)
+                        _inc_byte_ptr_rdi();
+                    else if (adds == 0xFF)
+                        _dec_byte_ptr_rdi();
+                    else if (adds != 0)
+                        _add_byte_ptr_rdi_8(adds);
                 }
                 else if (instr is SetConstInstr sc)
                 {
@@ -655,7 +627,7 @@ namespace BfFastRoman
                             _mov_ecx_32(op.mult);
                             add(0xF7); add(0xE1); // mul ecx
                         }
-                        _add_byte_ptr_rdi_offset32_al(dist);
+                        _add_byte_ptr_rdi_offset_al(dist);
                     }
                     // *tape = 0;
                     _mov_byte_ptr_rdi_8(0);
