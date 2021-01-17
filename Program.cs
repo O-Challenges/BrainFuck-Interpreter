@@ -353,7 +353,7 @@ namespace BfFastRoman
                 Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
                 Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m); Dummy(76543210987654321098765432100m);
             }
-#endregion
+            #endregion
 
             Output(0xDeadFace); // marks the end of the code
             return candidates[0];
@@ -433,19 +433,16 @@ namespace BfFastRoman
 
         private static List<Instr> Optimize(List<Instr> input)
         {
-            return input;
-#if false
-            var result = new List<Instr>();
-            // Merge add-moves
-            result = mergeNeighbours<AddMoveInstr, AddMoveInstr>(input, (am1, am2) => (am1.Move == 0 || am2.Add == 0) && addsFit(am1.Add + am2.Add) && sbyteFit(am1.Move + am2.Move), (am1, am2) => new AddMoveInstr { Add = am1.Add + am2.Add, Move = am1.Move + am2.Move });
+            var result = input.ToList();
             // Optimize loop bodies
             for (int i = 0; i < result.Count; i++)
             {
                 if (result[i] is LoopInstr lp)
                 {
                     lp.Instrs = Optimize(lp.Instrs);
-                    if (lp.Instrs.Count == 1 && lp.Instrs[0] is AddMoveInstr am && am.Add == -1 && am.Move == 0)
-                        result[i] = new MoveZeroInstr { Move = 0 };
+                    if (lp.Instrs.Count == 1 && lp.Instrs[0] is AddConstInstr ac && (ac.Add == -1 || ac.Add == 1))
+                        result[i] = new SetConstInstr { Const = 0 };
+#if false
                     else if (lp.Instrs.Count == 1 && lp.Instrs[0] is AddMoveInstr am3 && am3.Add == 0)
                         result[i] = new FindZeroInstr { Dist = am3.Move };
                     else if (lp.Instrs.Count == 2 && lp.Instrs[0] is AddMoveInstr add1 && lp.Instrs[1] is AddMoveInstr add2 && add1.Add == -1 && add2.Add == 1 && add1.Move == -add2.Move)
@@ -466,14 +463,16 @@ namespace BfFastRoman
                         if (ptrOffset == 0 && intOffset == -1 && res.All(r => sbyteFit(r.mult) && sbyteFit(r.dist)) && sbyteFit(res.Sum(r => r.dist)))
                             result[i] = new AddMultInstr { Ops = res.ToArray() };
                     }
+#endif
                 }
             }
 
+            result = mergeNeighbours<SetConstInstr, AddConstInstr>(result, (sc, ac) => true, (sc, ac) => new SetConstInstr { Const = sc.Const + ac.Add });
+            result = mergeNeighbours<AddConstInstr, SetConstInstr>(result, (ac, sc) => true, (ac, sc) => sc);
+
             return result;
-#endif
         }
 
-#if false
         private static List<Instr> mergeNeighbours<T1, T2>(List<Instr> input, Func<T1, T2, bool> canMerge, Func<T1, T2, Instr> doMerge) where T1 : Instr where T2 : Instr
         {
             var result = new List<Instr>();
@@ -497,7 +496,6 @@ namespace BfFastRoman
                 result.Add(last);
             return result;
         }
-#endif
 
         private static byte* _compilePtr;
         private static byte* _tape;
@@ -518,6 +516,7 @@ namespace BfFastRoman
             void _add_byte_ptr_rdi_8(int val) { add(0x80); add(0x07); add(unchecked((byte) val)); }
             void _movzx_ecx_byte_ptr_rdi() { add(0x0F); add(0xB6); add(0x0F); }
             void _mov_byte_ptr_rdi_al() { add(0x88); add(0x07); }
+            void _mov_byte_ptr_rdi_8(int val) { add(0xC6); add(0x07); add(unchecked((byte) val)); }
             void _cmp_byte_ptr_rdi(byte val) { add(0x80); add(0x3F); add(val); }
             void _mov_rax_s32(int val) { add(0x48); add(0xC7); add(0xC0); add32(val); }
             void _mov_rcx_s32(int val) { add(0x48); add(0xC7); add(0xC1); add32(val); }
@@ -582,11 +581,10 @@ namespace BfFastRoman
                 {
                     _helper_add_byte_ptr_rdi(a.Add);
                 }
-                //else if (instr is SetConstInstr mz)
-                //{
-                //    result.Add(i_moveZero);
-                //    result.Add(checked((sbyte) mz.Move));
-                //}
+                else if (instr is SetConstInstr sc)
+                {
+                    _mov_byte_ptr_rdi_8(sc.Const);
+                }
                 //else if (instr is SumInstr sm)
                 //{
                 //    result.Add(i_sum);
