@@ -369,7 +369,7 @@ namespace BfFastRoman
         private class MoveInstr : Instr { public int Move; }
         private class AddConstInstr : Instr { public int Add; }
         private class SetConstInstr : Instr { public int Const; }
-        private class FindZeroInstr : Instr { public int Dist; }
+        private class FindZeroInstr : Instr { public int Step; }
         private class SumInstr : Instr { public int Dist; }
         private class AddMultInstr : Instr { public (int dist, int mult)[] Ops; }
 
@@ -442,9 +442,9 @@ namespace BfFastRoman
                     lp.Instrs = Optimize(lp.Instrs);
                     if (lp.Instrs.Count == 1 && lp.Instrs[0] is AddConstInstr ac && (ac.Add == -1 || ac.Add == 1))
                         result[i] = new SetConstInstr { Const = 0 };
+                    else if (lp.Instrs.Count == 1 && lp.Instrs[0] is MoveInstr m)
+                        result[i] = new FindZeroInstr { Step = m.Move };
 #if false
-                    else if (lp.Instrs.Count == 1 && lp.Instrs[0] is AddMoveInstr am3 && am3.Add == 0)
-                        result[i] = new FindZeroInstr { Dist = am3.Move };
                     else if (lp.Instrs.Count == 2 && lp.Instrs[0] is AddMoveInstr add1 && lp.Instrs[1] is AddMoveInstr add2 && add1.Add == -1 && add2.Add == 1 && add1.Move == -add2.Move)
                         result[i] = new SumInstr { Dist = add1.Move };
                     else if (lp.Instrs.All(i => i is AddMoveInstr))
@@ -500,59 +500,62 @@ namespace BfFastRoman
         private static byte* _compilePtr;
         private static byte* _tape;
 
+        static void checkFit(int len) { if (_compilePtr + len - 1 >= CodeEnd) { Console.WriteLine($"Too much x86 machine code; max length is: {CodeEnd - CodeStart:#,0} bytes"); throw new Exception(); } }
+        static void add(byte b) { checkFit(1); *_compilePtr++ = b; }
+        static void add8(sbyte b) { add((byte) b); }
+        static void add32(int i32) { checkFit(4); *(int*) _compilePtr = i32; _compilePtr += 4; }
+        static void add64(ulong u64) { checkFit(8); *(ulong*) _compilePtr = u64; _compilePtr += 8; }
+
+        static void _inc_rdi() { add(0x48); add(0xFF); add(0xC7); }
+        static void _dec_rdi() { add(0x48); add(0xFF); add(0xCF); }
+        static void _add_rdi_8(int val) { sbyte c = checked((sbyte) val); add(0x48); add(0x83); add(0xC7); add((byte) val); }
+        static void _add_rdi_32(int val) { throw new NotImplementedException(); }
+        static void _inc_byte_ptr_rdi() { add(0xFE); add(0x07); }
+        static void _dec_byte_ptr_rdi() { add(0xFE); add(0x0F); }
+        static void _add_byte_ptr_rdi_8(int val) { add(0x80); add(0x07); add(unchecked((byte) val)); }
+        static void _movzx_ecx_byte_ptr_rdi() { add(0x0F); add(0xB6); add(0x0F); }
+        static void _mov_byte_ptr_rdi_al() { add(0x88); add(0x07); }
+        static void _mov_byte_ptr_rdi_8(int val) { add(0xC6); add(0x07); add(unchecked((byte) val)); }
+        static void _cmp_byte_ptr_rdi(byte val) { add(0x80); add(0x3F); add(val); }
+        static void _mov_rax_s32(int val) { add(0x48); add(0xC7); add(0xC0); add32(val); }
+        static void _mov_rcx_s32(int val) { add(0x48); add(0xC7); add(0xC1); add32(val); }
+        static void _mov_rdi_64(ulong val) { add(0x48); add(0xBF); add64((ulong) _tape); }
+        static void _je_8(long dist) { add(0x74); add((byte) checked((sbyte) dist)); }
+        static sbyte* _je_8() { add(0x74); sbyte* placeholder = (sbyte*) _compilePtr; add(0); return placeholder; }
+        static void _jne_8(long dist) { add(0x75); add((byte) checked((sbyte) dist)); }
+        static void _jne_8(byte* target) { _jne_8(target - (_compilePtr + 2)); }
+        static sbyte* _jne_8() { add(0x75); sbyte* placeholder = (sbyte*) _compilePtr; add(0); return placeholder; }
+        static void _jmp_8(byte* target) { add(0xEB); add8(checked((sbyte) (target - (_compilePtr + 1)))); }
+        static void _call_32(byte* target) { add(0xE8); add32(checked((int) (target - (_compilePtr + 4)))); }
+
+        static void _helper_add_rdi(int val)
+        {
+            if (val == 0)
+            { /* nothing */ }
+            else if (val == 1)
+                _inc_rdi();
+            else if (val == -1)
+                _dec_rdi();
+            else if (val >= -128 && val <= 127)
+                _add_rdi_8(val);
+            else
+                _add_rdi_32(val);
+        }
+        static void _helper_add_byte_ptr_rdi(int val)
+        {
+            var adds = val & 0xFF; // +257 = +1 and we want the "inc byte ptr [rdi]" in this case
+            if (adds == 0)
+            { /* nothing */ }
+            else if (adds == 1)
+                _inc_byte_ptr_rdi();
+            else if (adds == 0xFF)
+                _dec_byte_ptr_rdi();
+            else
+                _add_byte_ptr_rdi_8(adds);
+        }
+
         private static void CompileIntoTheMethod(List<Instr> prog, int depth)
         {
-            void checkFit(int len) { if (_compilePtr + len - 1 >= CodeEnd) { Console.WriteLine($"Too much x86 machine code; max length is: {CodeEnd - CodeStart:#,0} bytes"); throw new Exception(); } }
-            void add(byte b) { checkFit(1); *_compilePtr++ = b; }
-            void add32(int i32) { checkFit(4); *(int*) _compilePtr = i32; _compilePtr += 4; }
-            void add64(ulong u64) { checkFit(8); *(ulong*) _compilePtr = u64; _compilePtr += 8; }
-
-            void _inc_rdi() { add(0x48); add(0xFF); add(0xC7); }
-            void _dec_rdi() { add(0x48); add(0xFF); add(0xCF); }
-            void _add_rdi_8(int val) { sbyte c = checked((sbyte) val); add(0x48); add(0x83); add(0xC7); add((byte) val); }
-            void _add_rdi_32(int val) { throw new NotImplementedException(); }
-            void _inc_byte_ptr_rdi() { add(0xFE); add(0x07); }
-            void _dec_byte_ptr_rdi() { add(0xFE); add(0x0F); }
-            void _add_byte_ptr_rdi_8(int val) { add(0x80); add(0x07); add(unchecked((byte) val)); }
-            void _movzx_ecx_byte_ptr_rdi() { add(0x0F); add(0xB6); add(0x0F); }
-            void _mov_byte_ptr_rdi_al() { add(0x88); add(0x07); }
-            void _mov_byte_ptr_rdi_8(int val) { add(0xC6); add(0x07); add(unchecked((byte) val)); }
-            void _cmp_byte_ptr_rdi(byte val) { add(0x80); add(0x3F); add(val); }
-            void _mov_rax_s32(int val) { add(0x48); add(0xC7); add(0xC0); add32(val); }
-            void _mov_rcx_s32(int val) { add(0x48); add(0xC7); add(0xC1); add32(val); }
-            void _mov_rdi_64(ulong val) { add(0x48); add(0xBF); add64((ulong) _tape); }
-
-            void _helper_add_rdi(int val)
-            {
-                if (val == 0)
-                { /* nothing */ }
-                else if (val == 1)
-                    _inc_rdi();
-                else if (val == -1)
-                    _dec_rdi();
-                else if (val >= -128 && val <= 127)
-                    _add_rdi_8(val);
-                else
-                    _add_rdi_32(val);
-            }
-            void _helper_add_byte_ptr_rdi(int val)
-            {
-                var adds = val & 0xFF; // +257 = +1 and we want the "inc byte ptr [rdi]" in this case
-                if (adds == 0)
-                { /* nothing */ }
-                else if (adds == 1)
-                    _inc_byte_ptr_rdi();
-                else if (adds == 0xFF)
-                    _dec_byte_ptr_rdi();
-                else
-                    _add_byte_ptr_rdi_8(adds);
-            }
-            void _helper_call(byte* target)
-            {
-                add(0xE8);
-                add32(checked((int) (target - (_compilePtr + 4)))); // signed offset relative to after this call instruction location
-            }
-
             // rdi is tape pointer
             // ecx is used to pass the 32-bit int sent into OutputMethod
             // eax is used to pass the 32-bit int returned by InputMethod
@@ -585,6 +588,17 @@ namespace BfFastRoman
                 {
                     _mov_byte_ptr_rdi_8(sc.Const);
                 }
+                else if (instr is FindZeroInstr fz)
+                {
+                    _cmp_byte_ptr_rdi(0);
+                    var jmpDistPtr = _je_8();
+
+                    var label = _compilePtr;
+                    _add_rdi_8(fz.Step);
+                    _cmp_byte_ptr_rdi(0);
+                    _jne_8(label);
+                    *jmpDistPtr = checked((sbyte) (_compilePtr - (byte*) (jmpDistPtr + 1)));
+                }
                 //else if (instr is SumInstr sm)
                 //{
                 //    result.Add(i_sum);
@@ -601,11 +615,6 @@ namespace BfFastRoman
                 //        result.Add(checked((sbyte) total));
                 //        result.Add(checked((sbyte) op.mult));
                 //    }
-                //}
-                //else if (instr is FindZeroInstr fz)
-                //{
-                //    result.Add(i_findZero);
-                //    result.Add(checked((sbyte) fz.Dist));
                 //}
                 else if (instr is LoopInstr lp)
                 {
@@ -624,11 +633,11 @@ namespace BfFastRoman
                 else if (instr is OutputInstr)
                 {
                     _movzx_ecx_byte_ptr_rdi();
-                    _helper_call(OutputMethodEntry);
+                    _call_32(OutputMethodEntry);
                 }
                 else if (instr is InputInstr)
                 {
-                    _helper_call(InputMethodEntry);
+                    _call_32(InputMethodEntry);
                     _mov_byte_ptr_rdi_al();
                 }
                 else
@@ -639,69 +648,11 @@ namespace BfFastRoman
             {
                 // This compile method is recursive; but this is the very end of it. End execution (see Output for details)
                 _mov_rcx_s32(unchecked((int) 0xDeadDead));
-                _helper_call(OutputMethodEntry);
+                _call_32(OutputMethodEntry);
             }
         }
 
 #if false
-        private unsafe static void Execute(sbyte* program, Stream input, Stream output, int progLen)
-        {
-            var tapeLen = 30_000;
-            sbyte* tape = stackalloc sbyte[tapeLen];
-            var tapeStart = tape;
-            var tapeEnd = tape + tapeLen; // todo: wrap around
-            tape += tapeLen / 2;
-
-            while (true)
-            {
-                sbyte a = *(program++);
-                switch (a)
-                {
-                    case i_fwdJumpShort:
-                        if (*tape == 0)
-                            program += *(byte*) program;
-                        program++;
-                        break;
-
-                    case i_bckJumpShort:
-                        if (*tape != 0)
-                            program -= *(byte*) program;
-                        program++;
-                        break;
-
-                    case i_fwdJumpLong:
-                        if (*tape == 0)
-                        {
-                            int dist = *(byte*) (program++);
-                            dist |= (*(byte*) program) << 8;
-                            program += dist;
-                        }
-                        program += 2;
-                        break;
-
-                    case i_bckJumpLong:
-                        if (*tape != 0)
-                        {
-                            int dist = *(byte*) (program++);
-                            dist |= (*(byte*) program) << 8;
-                            program -= dist;
-                        }
-                        program += 2;
-                        break;
-
-                    case i_moveZero:
-                        tape += *(program++); // move
-                        *tape = 0;
-                        break;
-
-                    case i_findZero:
-                        {
-                            sbyte dist = *(program++);
-                            while (*tape != 0)
-                                tape += dist;
-                        }
-                        break;
-
                     case i_sum:
                         {
                             sbyte dist = *(program++);
@@ -723,28 +674,6 @@ namespace BfFastRoman
                             *tape = 0;
                         }
                         break;
-
-                    case i_input:
-                        var b = input.ReadByte();
-                        if (b < 0)
-                            throw new EndOfStreamException();
-                        *tape = (sbyte) b;
-                        break;
-
-                    case i_output:
-                        output.WriteByte(*(byte*) tape);
-                        break;
-
-                    case i_end:
-                        return;
-
-                    default:
-                        *tape += a; // add
-                        tape += *(program++); // move
-                        break;
-                }
-            }
-        }
 #endif
     }
 }
