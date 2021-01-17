@@ -370,7 +370,7 @@ namespace BfFastRoman
         private class AddConstInstr : Instr { public int Add; }
         private class SetConstInstr : Instr { public int Const; }
         private class FindZeroInstr : Instr { public int Step; }
-        private class SumInstr : Instr { public int Dist; }
+        //private class AddToInstr : Instr { public int Dist; }
         private class AddMultInstr : Instr { public (int dist, int mult)[] Ops; }
 
         static int pos;
@@ -444,26 +444,24 @@ namespace BfFastRoman
                         result[i] = new SetConstInstr { Const = 0 };
                     else if (lp.Instrs.Count == 1 && lp.Instrs[0] is MoveInstr m)
                         result[i] = new FindZeroInstr { Step = m.Move };
-#if false
-                    else if (lp.Instrs.Count == 2 && lp.Instrs[0] is AddMoveInstr add1 && lp.Instrs[1] is AddMoveInstr add2 && add1.Add == -1 && add2.Add == 1 && add1.Move == -add2.Move)
-                        result[i] = new SumInstr { Dist = add1.Move };
-                    else if (lp.Instrs.All(i => i is AddMoveInstr))
+                    else if (lp.Instrs.All(i => i is MoveInstr || i is AddConstInstr))
                     {
                         int ptrOffset = 0;
                         int intOffset = 0;
                         var res = new List<(int dist, int mult)>();
-                        foreach (var ins in lp.Instrs.Cast<AddMoveInstr>())
+                        foreach (var ins in lp.Instrs)
                         {
+                            int move = ins is MoveInstr mm ? mm.Move : 0;
+                            int add = ins is AddConstInstr aa ? aa.Add : 0;
                             if (ptrOffset == 0)
-                                intOffset += ins.Add;
-                            else if (ins.Add != 0)
-                                res.Add((dist: ptrOffset - res.Sum(r => r.dist), mult: ins.Add));
-                            ptrOffset += ins.Move;
+                                intOffset += add;
+                            else if (add != 0)
+                                res.Add((dist: ptrOffset - res.Sum(r => r.dist), mult: add));
+                            ptrOffset += move;
                         }
-                        if (ptrOffset == 0 && intOffset == -1 && res.All(r => sbyteFit(r.mult) && sbyteFit(r.dist)) && sbyteFit(res.Sum(r => r.dist)))
+                        if (ptrOffset == 0 && intOffset == -1)
                             result[i] = new AddMultInstr { Ops = res.ToArray() };
                     }
-#endif
                 }
             }
 
@@ -513,10 +511,20 @@ namespace BfFastRoman
         static void _inc_byte_ptr_rdi() { add(0xFE); add(0x07); }
         static void _dec_byte_ptr_rdi() { add(0xFE); add(0x0F); }
         static void _add_byte_ptr_rdi_8(int val) { add(0x80); add(0x07); add(unchecked((byte) val)); }
+        static void _mov_al_byte_ptr_rdi() { add(0x8A); add(0x07); }
+        static void _mov_cl_byte_ptr_rdi() { add(0x8A); add(0x0F); }
+        static void _movzx_eax_byte_ptr_rdi() { add(0x0F); add(0xB6); add(0x07); }
         static void _movzx_ecx_byte_ptr_rdi() { add(0x0F); add(0xB6); add(0x0F); }
         static void _mov_byte_ptr_rdi_al() { add(0x88); add(0x07); }
         static void _mov_byte_ptr_rdi_8(int val) { add(0xC6); add(0x07); add(unchecked((byte) val)); }
+        static void _mov_byte_ptr_rdi_offset8_al(int offset) { add(0x88); add(0x47); add8(checked((sbyte) offset)); }
+        static void _mov_byte_ptr_rdi_offset32_al(int offset) { add(0x88); add(0x87); add32(offset); }
+        static void _mov_byte_ptr_rdi_offset_al(int val) { if (val >= -128 && val <= 127) _mov_byte_ptr_rdi_offset8_al(val); else _mov_byte_ptr_rdi_offset32_al(val); }
+        static void _add_byte_ptr_rdi_offset8_al(int offset) { add(0x00); add(0x47); add8(checked((sbyte) offset)); }
+        static void _add_byte_ptr_rdi_offset32_al(int offset) { add(0x00); add(0x87); add32(offset); }
+        static void _add_byte_ptr_rdi_offset_al(int val) { if (val >= -128 && val <= 127) _mov_byte_ptr_rdi_offset8_al(val); else _mov_byte_ptr_rdi_offset32_al(val); }
         static void _cmp_byte_ptr_rdi(byte val) { add(0x80); add(0x3F); add(val); }
+        static void _mov_ecx_32(int val) { add(0xB9); add32(val); }
         static void _mov_rax_s32(int val) { add(0x48); add(0xC7); add(0xC0); add32(val); }
         static void _mov_rcx_s32(int val) { add(0x48); add(0xC7); add(0xC1); add32(val); }
         static void _mov_rdi_64(ulong val) { add(0x48); add(0xBF); add64((ulong) _tape); }
@@ -599,23 +607,24 @@ namespace BfFastRoman
                     _jne_8(label);
                     *jmpDistPtr = checked((sbyte) (_compilePtr - (byte*) (jmpDistPtr + 1)));
                 }
-                //else if (instr is SumInstr sm)
-                //{
-                //    result.Add(i_sum);
-                //    result.Add(checked((sbyte) sm.Dist));
-                //}
-                //else if (instr is AddMultInstr amul)
-                //{
-                //    result.Add(i_addMult);
-                //    result.Add(checked((sbyte) amul.Ops.Length));
-                //    var total = 0;
-                //    foreach (var op in amul.Ops)
-                //    {
-                //        total += op.dist;
-                //        result.Add(checked((sbyte) total));
-                //        result.Add(checked((sbyte) op.mult));
-                //    }
-                //}
+                else if (instr is AddMultInstr amul)
+                {
+                    var dist = 0;
+                    foreach (var op in amul.Ops)
+                    {
+                        dist += op.dist;
+                        // *(tape + dist) += (sbyte) (mult * *tape);
+                        _movzx_eax_byte_ptr_rdi();
+                        if (op.mult != 1)
+                        {
+                            _mov_ecx_32(op.mult);
+                            add(0xF7); add(0xE1); // mul ecx
+                        }
+                        _add_byte_ptr_rdi_offset32_al(dist);
+                    }
+                    // *tape = 0;
+                    _mov_byte_ptr_rdi_8(0);
+                }
                 else if (instr is LoopInstr lp)
                 {
                     var loopStartPtr = _compilePtr;
@@ -651,29 +660,5 @@ namespace BfFastRoman
                 _call_32(OutputMethodEntry);
             }
         }
-
-#if false
-                    case i_sum:
-                        {
-                            sbyte dist = *(program++);
-                            sbyte val = *tape;
-                            *(tape + dist) += val;
-                            *tape = 0;
-                        }
-                        break;
-
-                    case i_addMult:
-                        {
-                            sbyte num = *(program++);
-                            while (num-- > 0)
-                            {
-                                sbyte dist = *(program++);
-                                sbyte mult = *(program++);
-                                *(tape + dist) += (sbyte) (mult * *tape);
-                            }
-                            *tape = 0;
-                        }
-                        break;
-#endif
     }
 }
