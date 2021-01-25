@@ -22,6 +22,7 @@ The following languages are going to be included with their respective author:
 | C#           | @rstarkov          |
 | Java         | @clubPenguin420    |
 | Java       	| @GameLawl        	|
+| Golang       | @aosync            |
 | Golang     	| @Oli-Ar          	|
 | JavaScript   | @Rodziac           |
 | Python       | @Fark1             |
